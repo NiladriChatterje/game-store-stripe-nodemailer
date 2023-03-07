@@ -1,0 +1,96 @@
+@import url("//db.onlinewebfonts.com/c/8cdbb48678e4418f22a2f507c2b975bd?family=Blanka");
+
+#h1 {
+    color: white;
+    font-size: 2em;
+    margin-top: 20%;
+    font-family: 'Blanka', sans-serif;
+}
+
+#whole_wrapper {
+    display: flex;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -45%);
+    justify-content: center;
+    width: 95vw;
+}
+
+#barrier {
+    height: 50vh;
+    margin: 0 25px;
+    width: 1px;
+    background-color: white;
+}
+
+th,
+td {
+    padding-left: 50px;
+    width: 80px;
+}
+
+#nam_price {
+    width: 40vw;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    justify-content: space-between;
+}
+
+#nam_price>div:not(:first-child) {
+    display: flex;
+    font-size: 0.5em;
+    font-weight: 100;
+    width: 100%;
+    justify-content: space-between;
+}
+
+table th:first-child,
+td:first-child {
+    padding-left: 0;
+    text-align: left;
+}
+
+table th:last-child,
+td:last-child {
+    text-align: right;
+}
+
+table th:nth-child(2),
+td:nth-child(2) {
+    text-align: center;
+}
+
+@media all and (max-width:1200px) {
+    #whole_wrapper {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    table th:first-child,
+    td:first-child {
+        padding-left: 0;
+        text-align: left;
+    }
+
+    table th:last-child,
+    td:last-child {
+        text-align: right;
+    }
+
+    table th:nth-child(2),
+    td:nth-child(2) {
+        text-align: center;
+    }
+
+    #nam_price {
+        width: 90vw;
+    }
+
+    #barrier {
+        width: 100vw;
+        margin: 25px 0;
+        height: 1px;
+    }
+}
