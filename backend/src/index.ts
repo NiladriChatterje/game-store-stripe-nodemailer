@@ -36,53 +36,31 @@ if (cluster.isPrimary) {
         next();
     })
 
-    function sendEmail({ recipient, confirmation }: {
-        recipient: string; confirmation: number;
-    }) {
-        return new Promise((resolve, reject) => {
-            const transportObject = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.AUTH_EMAIL,
-                    pass: process.env.APP_KEY
-                }
-            });
-
-            console.log(recipient);
-            console.log(confirmation)
-
-            const mailConfig = {
-                from: process.env.AUTH_EMAIL,
-                to: recipient,
-                subject: 'Email Verification XVStore',
-                text: `Do Not share the OTP \n The Confirmation OTP is : ${confirmation}\n\n\n Thanks for visiting.\nRegards`//Message actually
-            };
-
-            transportObject.sendMail(mailConfig, (error: Error | null, info: SentMessageInfo) => {
-                if (error) {
-                    console.log(error);
-                    reject({ message: 'An error has occured' })
-                }
-                resolve({ message: 'Successfully Sent' })
-            })
-        })
-    }
 
     app.get('/', (req: Request, res: Response) => {
         res.send('pinged!');
     });
 
-    app.get('/test-endpoint', (req, res) => {
+    app.get('/test-endpoint', (req: Request, res: Response) => {
         console.log('test!');
         res.end('tested')
     });
 
-    app.post('/send-email', (req, res) => {
-        sendEmail(req.body).then((resolve) => res.send(resolve))
-            .catch(e => res.status(500).send(e.message));
+    app.post('/send-email', (req: Request, res: Response) => {
+        console.log(req.body)
+        const NotClonedObject = {
+            workerData: {
+                value: req.body
+            },
+            transferList: req.body
+        }
+        const worker = new Worker('./src/EmailWorker.js', NotClonedObject);
+        worker.on('message', (value: boolean) => {
+            res.send(value);
+        });
     });
 
-    app.post("/create-payment-intent", async (req, res) => {
+    app.post("/create-payment-intent", async (req: Request, res: Response) => {
         const { price } = req.body
         console.log(price);
         console.log(req.body);
@@ -96,7 +74,7 @@ if (cluster.isPrimary) {
             res.send({
                 clientSecret: paymentIntent.client_secret,
             });
-        } catch (e: any) {
+        } catch (e: Error | any) {
             res.status(400).send({
                 error: {
                     message: e.message,
