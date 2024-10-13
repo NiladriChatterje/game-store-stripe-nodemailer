@@ -5,5 +5,4 @@ setInterval(() => {
     child_process.stdout.on('data', (data) => {
         console.log(data.toString('utf-8'));
     });
-    // child_process.disconnect();
 }, 25000)
