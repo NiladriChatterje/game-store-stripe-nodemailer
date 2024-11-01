@@ -23,7 +23,6 @@ if (cluster.isPrimary) {
         })
     }
 } else {
-
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
     const app: Express = express();
 
@@ -65,7 +64,7 @@ if (cluster.isPrimary) {
         console.log(price);
         console.log(req.body);
         try {
-            const paymentIntent = await stripe.paymentIntents.create({
+            const paymentIntent: Stripe.PaymentIntent = await stripe.paymentIntents.create({
                 currency: "inr",
                 amount: Number(price),
                 automatic_payment_methods: { enabled: true },
