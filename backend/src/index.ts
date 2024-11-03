@@ -2,7 +2,6 @@
 import { Worker } from 'worker_threads';
 import cluster from 'cluster';
 import express, { Express, NextFunction, Request, Response } from 'express';
-import nodemailer, { SentMessageInfo } from 'nodemailer';
 import cors from 'cors';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
@@ -80,6 +79,32 @@ if (cluster.isPrimary) {
                 },
             });
         }
+    });
+    app.post('/fetch-mail-otp', (req: Request, res: Response) => {
+        const OTP = Math.trunc(Math.random() * 10 ** 6);
+        const worker = new Worker('./src/EmailWorker.js', {
+            workerData: {
+                recipient: req.body?.recipient,
+                confirmation: OTP
+            }
+        });
+        worker.on('message', (data) => {
+            if (data) res.status(200).json({ OTP });
+            else res.status(500).json({ OTP: -1 })
+        });
+    });
+
+    app.post('/fetch-phone-otp', (req: Request, res: Response) => {
+        const OTP = Math.trunc(Math.random() * 10 ** 6);
+        const worker = new Worker('./src/PhoneWorker.js', {
+            workerData: {
+
+                recipient: req.body?.phone,
+                confirmation: OTP
+
+            }
+        });
+
     });
 
     app.listen(process.env.PORT, () => console.log('listening on PORT:' + process.env.PORT))

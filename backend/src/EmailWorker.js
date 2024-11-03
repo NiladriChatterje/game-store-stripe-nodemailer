@@ -33,7 +33,7 @@ export function sendEmail({ recipient, confirmation }) {
 }
 
 
-sendEmail(workerData.value)
+sendEmail(workerData)
     .then((resolve) => {
         parentPort.postMessage(true);
     })
