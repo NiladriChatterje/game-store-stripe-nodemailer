@@ -3,6 +3,7 @@ import { defineField, defineType } from "sanity";
 export const AddressObject = defineType({
     name: 'AddressObjectType',
     type: 'object',
+    validation: rule => rule.required(),
     fields: [
         defineField({
             name: 'pinCode',
@@ -18,6 +19,11 @@ export const AddressObject = defineType({
         defineField({
             name: 'country',
             title: 'Country',
+            type: 'string',
+        }),
+        defineField({
+            name: 'locality',
+            title: 'Locality',
             type: 'string',
         }),
     ]

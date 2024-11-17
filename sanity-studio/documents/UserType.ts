@@ -1,11 +1,18 @@
 import { defineField } from "sanity";
 export const UserType = defineField({
     name: 'UserType',
+    title: 'User',
     type: 'document',
     fields: [
         defineField({
             name: 'username',
             title: 'Username',
+            type: 'string',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'userID',
+            title: 'USER ID',
             type: 'string',
             validation: rule => rule.required()
         }),

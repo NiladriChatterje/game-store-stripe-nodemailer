@@ -12,6 +12,12 @@ const AdminType = defineField({
             validation: rule => rule.required()
         }),
         defineField({
+            name: 'userID',
+            title: 'USER ID',
+            type: 'string',
+            validation: rule => rule.required()
+        }),
+        defineField({
             name: 'phone',
             title: 'Phone',
             type: 'number',
@@ -25,11 +31,17 @@ const AdminType = defineField({
         }),
         defineField({
             name: 'geoPoint',
-            type: 'geoPoint'
+            type: 'geopoint',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'Subscription',
+            type: 'subscription',
+            validation: rule => rule.required()
         }),
         defineField({
             name: 'address',
-            type: 'AddressObject'
+            type: 'AddressObjectType'
         }),
         defineField({
             name: 'ordersServed',
@@ -45,7 +57,8 @@ const AdminType = defineField({
             initialValue: [{}],
             of: [
                 defineArrayMember({ type: 'productStructure' })
-            ]
+            ],
+            readOnly: true
         }),
     ]
 })
