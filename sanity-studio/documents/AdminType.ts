@@ -18,6 +18,12 @@ const AdminType = defineField({
             validation: rule => rule.required()
         }),
         defineField({
+            name: 'gstin',
+            title: 'GSTIN',
+            type: 'string',
+            validation: rule => rule.required().max(15).min(15)
+        }),
+        defineField({
             name: 'phone',
             title: 'Phone',
             type: 'number',

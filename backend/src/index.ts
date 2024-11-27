@@ -1,10 +1,13 @@
 
 import { Worker } from 'worker_threads';
+import crypto from 'node:crypto';
+import Razorpay from 'razorpay';
 import cluster from 'cluster';
 import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
-import Stripe from 'stripe';
 import dotenv from 'dotenv';
+import shortid from 'shortid';
+
 dotenv.config();
 
 type sendMailFunctionParamsTypeDeclaration = {
@@ -22,9 +25,7 @@ if (cluster.isPrimary) {
         })
     }
 } else {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
     const app: Express = express();
-
 
     app.use(cors());
     app.use(express.json({ limit: '25mb' }));
@@ -58,20 +59,22 @@ if (cluster.isPrimary) {
         });
     });
 
-    app.post("/create-payment-intent", async (req: Request, res: Response) => {
-        const { price } = req.body
+    app.post("/razorpay", async (req: Request, res: Response) => {
+        const { price, currency } = req.body
         console.log(price);
         console.log(req.body);
         try {
-            const paymentIntent: Stripe.PaymentIntent = await stripe.paymentIntents.create({
-                currency: "inr",
+            const razorpay = new Razorpay({
+                key_id: process.env.RAZORPAY_PUBLIC_KEY,
+                key_secret: process.env.RAZORPAY_SECRET_KEY
+            });
+            const response = await razorpay.orders.create({
                 amount: Number(price),
-                automatic_payment_methods: { enabled: true },
+                currency: 'INR',
+                receipt: shortid()
             });
-
-            res.send({
-                clientSecret: paymentIntent.client_secret,
-            });
+            console.log(response)
+            res.json(response);
         } catch (e: Error | any) {
             res.status(400).send({
                 error: {
