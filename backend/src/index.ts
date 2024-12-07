@@ -6,7 +6,6 @@ import cluster from 'cluster';
 import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import shortid from 'shortid';
 
 dotenv.config();
 
@@ -63,25 +62,13 @@ if (cluster.isPrimary) {
         const { price, currency } = req.body
         console.log(price);
         console.log(req.body);
-        try {
-            const razorpay = new Razorpay({
-                key_id: process.env.RAZORPAY_PUBLIC_KEY,
-                key_secret: process.env.RAZORPAY_SECRET_KEY
-            });
-            const response = await razorpay.orders.create({
-                amount: Number(price),
-                currency: 'INR',
-                receipt: shortid()
-            });
-            console.log(response)
-            res.json(response);
-        } catch (e: Error | any) {
-            res.status(400).send({
-                error: {
-                    message: e.message,
-                },
-            });
-        }
+        const worker_razorpay = new Worker('./src/RazorpayProcess.js', {
+            workerData: {
+                price, currency
+            }
+        });
+
+        res.send(worker_razorpay)
     });
     app.post('/fetch-mail-otp', (req: Request, res: Response) => {
         const OTP = Math.trunc(Math.random() * 10 ** 6);
