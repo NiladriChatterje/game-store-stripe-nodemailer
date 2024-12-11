@@ -1,7 +1,5 @@
 
 import { Worker } from 'worker_threads';
-import crypto from 'node:crypto';
-import Razorpay from 'razorpay';
 import cluster from 'cluster';
 import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
@@ -68,7 +66,10 @@ if (cluster.isPrimary) {
             }
         });
 
-        res.send(worker_razorpay)
+        worker_razorpay.on('message', (msg_event) => {
+            console.log('message : ' + msg_event);
+            res.json(msg_event)
+        })
     });
     app.post('/fetch-mail-otp', (req: Request, res: Response) => {
         const OTP = Math.trunc(Math.random() * 10 ** 6);
