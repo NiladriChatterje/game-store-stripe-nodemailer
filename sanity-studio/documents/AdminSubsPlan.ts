@@ -1,4 +1,4 @@
-import { defineField, defineType } from "sanity";
+import { defineArrayMember, defineField, defineType } from "sanity";
 
 export const plansObject = defineType({
     name: 'plans',
@@ -8,11 +8,15 @@ export const plansObject = defineType({
             name: 'activeDate',
             title: 'Active Date',
             type: 'datetime',
+            validation: rule => rule.required()
+
         }),
         defineField({
             name: 'activeDays',
             title: 'Active Days',
             type: 'number',
+            validation: rule => rule.required()
+
         }),
         defineField({
             name: 'expirePlan',
@@ -22,7 +26,7 @@ export const plansObject = defineType({
         })]
 })
 
-export const AdminSubsPlan = defineType({
+export const AdminSubsPlan = defineArrayMember({
     name: 'subscription',
     type: 'object',
     title: 'Subscription',
@@ -31,25 +35,25 @@ export const AdminSubsPlan = defineType({
             name: 'transactionID',
             title: 'Transaction ID',
             type: 'string',
-
+            validation: rule => rule.required()
         }),
         defineField({
             name: 'activePlan',
             title: 'Active Plan',
             type: 'number',
+            validation: rule => rule.required()
         }),
         defineField({
             name: 'isPlanActive',
             title: 'Plan Active',
             type: 'boolean',
+            initialValue: false,
+            validation: rule => rule.required()
         }),
         defineField({
             name: 'planSchemeList',
-            type: 'array',
-            of: [{
-                type: 'plans'
-            }
-            ]
+            title: 'Plans',
+            type: 'plans'
         })
     ]
 })

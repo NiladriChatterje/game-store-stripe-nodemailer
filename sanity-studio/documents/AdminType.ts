@@ -1,4 +1,4 @@
-import { defineArrayMember, defineField } from "sanity";
+import { defineField } from "sanity";
 
 const AdminType = defineField({
     name: 'admin',
@@ -12,8 +12,8 @@ const AdminType = defineField({
             validation: rule => rule.required()
         }),
         defineField({
-            name: 'userID',
-            title: 'USER ID',
+            name: 'adminId',
+            title: 'ADMIN ID',
             type: 'string',
             validation: rule => rule.required()
         }),
@@ -41,8 +41,12 @@ const AdminType = defineField({
             validation: rule => rule.required()
         }),
         defineField({
-            name: 'Subscription',
-            type: 'subscription',
+            name: 'SubscriptionPlan',
+            title: 'Subscription',
+            type: 'array',
+            of: [
+                { type: 'subscription' }
+            ],
             validation: rule => rule.required()
         }),
         defineField({
@@ -55,16 +59,6 @@ const AdminType = defineField({
             type: 'number',
             initialValue: 0,
             validation: rule => rule.min(0),
-        }),
-        defineField({
-            name: 'inventory',
-            title: 'Inventory',
-            type: 'array',
-            initialValue: [{}],
-            of: [
-                defineArrayMember({ type: 'productStructure' })
-            ],
-            readOnly: true
         }),
     ]
 })

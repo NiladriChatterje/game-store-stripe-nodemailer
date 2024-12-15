@@ -2,36 +2,76 @@ import { defineField, defineType } from "sanity";
 
 export const ProductType = defineType({
     name: 'productStructure',
-    type: 'object',
+    title: 'Product',
+    type: 'document',
     fields: [
+        defineField({
+            name: 'productName',
+            title: 'Product Name',
+            type: 'string',
+            description: 'Name of the Product',
+        }),
+        defineField({
+            name: 'image',
+            title: 'Image',
+            type: 'array',
+            of: [{
+                type: 'image',
+                options: {
+                    hotspot: true
+                }
+            }],
+            description: 'Product Images',
+
+        }),
         defineField({
             name: 'EAC_UAC_UPC_ISBN',
             title: 'EAC_UAC_UPC_ISBN',
-            type: 'array',
-            description: 'To uniquely identify every product globally',
-            of: [{ type: 'string' }],
+            type: 'string',
+            description: 'Select Type of UID',
             options: {
-                list: ['EAC', 'UPC', 'ISBN']
+                list: ['EAC', 'UPC', 'ISBN', 'ASIN', 'OTHERS'],
+                layout: 'radio'
             }
         }),
         defineField({
             name: 'EAC_UAC_UPC_ISBN_number',
             title: 'EAC_UAC_UPC_ISBN_number',
-            type: 'array',
+            type: 'number',
             description: 'To uniquely identify every product globally',
-            of: [{ type: 'number' }],
         }),
         defineField({
             name: 'quantity',
             title: 'Quantity',
+            type: 'number',
+            validation: rule => rule.positive()
+        }),
+        defineField({
+            name: 'sellerId',
+            title: 'Seller ID',
             type: 'number'
         }),
-
         defineField({
-            name: 'pinCode',
-            title: 'PIN Code',
-            type: 'number',
-            validation: rule => rule.required().positive().max(999999).min(100000)
+            name: 'productDescription',
+            title: 'Product Description',
+            type: 'string',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'price',
+            title: 'Price',
+            type: 'productPriceType',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'keywords',
+            title: 'Keywords',
+            type: 'array',
+            of: [{ type: 'string' }],
+            description: 'improves search engine',
+            options: {
+                layout: 'tags'
+            }
         })
     ]
 })
