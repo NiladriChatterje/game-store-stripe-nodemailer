@@ -47,9 +47,10 @@ export const ProductType = defineType({
             validation: rule => rule.positive()
         }),
         defineField({
-            name: 'sellerId',
-            title: 'Seller ID',
-            type: 'number'
+            name: 'seller',
+            title: 'Seller',
+            type: 'reference',
+            to: [{ type: 'admin' }]
         }),
         defineField({
             name: 'productDescription',
