@@ -25,20 +25,26 @@ export const ProductType = defineType({
 
         }),
         defineField({
-            name: 'EAC_UAC_UPC_ISBN',
-            title: 'EAC_UAC_UPC_ISBN',
+            name: 'eanUpcIsbnGtinAsinType',
+            title: 'EAN_UPC_ISBN_GTIN Type',
             type: 'string',
             description: 'Select Type of UID',
             options: {
-                list: ['EAC', 'UPC', 'ISBN', 'ASIN', 'OTHERS'],
+                list: ['EAC', 'UPC', 'ISBN', 'ASIN', 'GTIN', 'OTHERS'],
                 layout: 'radio'
             }
         }),
+
         defineField({
-            name: 'EAC_UAC_UPC_ISBN_number',
-            title: 'EAC_UAC_UPC_ISBN_number',
-            type: 'number',
+            name: 'eanUpcIsbnGtinAsinNumber',
+            title: 'EAN_UPC_ISBN_GTIN Number',
+            type: 'string',
             description: 'To uniquely identify every product globally',
+        }),
+        defineField({
+            name: 'modelNumber',
+            title: 'Model Number',
+            type: 'string',
         }),
         defineField({
             name: 'quantity',
@@ -49,8 +55,9 @@ export const ProductType = defineType({
         defineField({
             name: 'seller',
             title: 'Seller',
-            type: 'reference',
-            to: [{ type: 'admin' }]
+            type: 'array',
+            of: [{ type: 'reference', to: [{ type: 'admin' }] }],
+            validation: rule => rule.required().min(1)
         }),
         defineField({
             name: 'productDescription',
