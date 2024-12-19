@@ -60,6 +60,12 @@ const AdminType = defineField({
             initialValue: 0,
             validation: rule => rule.min(0),
         }),
+        defineField({
+            name: 'productReferenceAfterListing',
+            title: 'Product Reference',
+            type: 'reference',
+            to: [{ type: 'productType' }]
+        }),
     ]
 })
 
