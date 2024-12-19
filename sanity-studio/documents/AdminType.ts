@@ -63,8 +63,8 @@ const AdminType = defineField({
         defineField({
             name: 'productReferenceAfterListing',
             title: 'Product Reference',
-            type: 'reference',
-            to: [{ type: 'productType' }]
+            type: 'array',
+            of: [{ type: 'reference', to: [{ type: 'productType' }] }]
         }),
     ]
 })
