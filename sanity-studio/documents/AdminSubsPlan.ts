@@ -8,6 +8,7 @@ export const plansObject = defineType({
             name: 'activeDate',
             title: 'Active Date',
             type: 'datetime',
+            initialValue: new Date().toISOString(),
             validation: rule => rule.required()
 
         }),
@@ -22,7 +23,7 @@ export const plansObject = defineType({
             name: 'expirePlan',
             title: 'Plan Expiration',
             type: 'datetime',
-            initialValue: new Date().toISOString()
+            initialValue: new Date(90).toISOString()
         })]
 })
 
@@ -32,8 +33,20 @@ export const AdminSubsPlan = defineType({
     title: 'Subscription',
     fields: [
         defineField({
-            name: 'transactionID',
+            name: 'transactionId',
             title: 'Transaction ID',
+            type: 'string',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'orderId',
+            title: 'Order ID',
+            type: 'string',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'paymentSignature',
+            title: 'Payment Signature',
             type: 'string',
             validation: rule => rule.required()
         }),
