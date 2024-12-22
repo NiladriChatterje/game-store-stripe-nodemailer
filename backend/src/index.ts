@@ -11,6 +11,7 @@ type sendMailFunctionParamsTypeDeclaration = {
     recipient: string; confirmation: number;
 }
 import { availableParallelism } from 'os';
+import { createClient } from '@sanity/client';
 
 if (cluster.isPrimary) {
     new Worker('./src/BackgroundPingProcess.js');
@@ -32,6 +33,13 @@ if (cluster.isPrimary) {
         next();
     })
 
+    const sanityClient = createClient({
+        projectId: process.env.SANITY_PROJECT_ID,
+        dataset: 'production',
+        apiVersion: '2024-12-21',
+        useCdn: true,
+        token: process.env.SANITY_TOKEN
+    });
 
     app.get('/', (req: Request, res: Response) => {
         res.send('pinged!');
@@ -71,6 +79,15 @@ if (cluster.isPrimary) {
             res.json(msg_event)
         })
     });
+
+    app.post('/save-subscription', async (req: Request, res: Response) => {
+        const { user, plan } = req.body;
+        console.log(req.body)
+        // sanityClient.create({
+        //     _type: ''
+        // })
+    })
+
     app.post('/fetch-mail-otp', (req: Request, res: Response) => {
         const OTP = Math.trunc(Math.random() * 10 ** 6);
         const worker = new Worker('./src/EmailWorker.js', {

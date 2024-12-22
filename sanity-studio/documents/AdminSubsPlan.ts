@@ -1,4 +1,4 @@
-import { defineArrayMember, defineField, defineType } from "sanity";
+import { defineField, defineType } from "sanity";
 
 export const plansObject = defineType({
     name: 'plans',
@@ -26,7 +26,7 @@ export const plansObject = defineType({
         })]
 })
 
-export const AdminSubsPlan = defineArrayMember({
+export const AdminSubsPlan = defineType({
     name: 'subscription',
     type: 'object',
     title: 'Subscription',

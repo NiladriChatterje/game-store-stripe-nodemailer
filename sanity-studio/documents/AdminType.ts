@@ -1,6 +1,6 @@
-import { defineField } from "sanity";
+import { defineField, defineType } from "sanity";
 
-const AdminType = defineField({
+const AdminType = defineType({
     name: 'admin',
     title: 'Admin',
     type: 'document',

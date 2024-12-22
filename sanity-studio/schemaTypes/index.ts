@@ -4,5 +4,6 @@ import { UserType } from '../documents/UserType';
 import { productPriceType } from '../documents/ProductPriceType'
 import { AddressObject } from '../documents/AddressType';
 import { AdminSubsPlan, plansObject } from '../documents/AdminSubsPlan';
+import { type SchemaTypeDefinition } from 'sanity';
 
-export const schemaTypes = [AdminType, productPriceType, plansObject, ProductType, UserType, AddressObject, AdminSubsPlan]
+export const schemaTypes: SchemaTypeDefinition[] = [AdminType, productPriceType, plansObject, ProductType, UserType, AddressObject, AdminSubsPlan]
