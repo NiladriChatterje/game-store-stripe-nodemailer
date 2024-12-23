@@ -20,10 +20,17 @@ export const plansObject = defineType({
 
         }),
         defineField({
-            name: 'expirePlan',
+            name: 'expireDate',
             title: 'Plan Expiration',
             type: 'datetime',
-            initialValue: new Date(90).toISOString()
+            initialValue: () => {
+                const date = new Date();
+                date.setDate(date.getDate() + 30);
+                return date.toISOString();
+            },
+            validation: rule => rule.required().custom((context) => {
+                return true;
+            })
         })]
 })
 
