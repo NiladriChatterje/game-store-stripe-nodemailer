@@ -27,7 +27,7 @@ const AdminType = defineType({
             name: 'phone',
             title: 'Phone',
             type: 'number',
-            validation: rule => rule.required().min(1000000000).max(9999999999)
+            validation: rule => rule.min(1000000000).max(9999999999)
         }),
         defineField({
             name: 'email',
