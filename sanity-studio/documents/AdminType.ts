@@ -21,7 +21,7 @@ const AdminType = defineType({
             name: 'gstin',
             title: 'GSTIN',
             type: 'string',
-            validation: rule => rule.required().max(15).min(15)
+            validation: rule => rule.max(15).min(15)
         }),
         defineField({
             name: 'phone',
@@ -47,7 +47,7 @@ const AdminType = defineType({
             of: [
                 { type: 'subscription' }
             ],
-            validation: rule => rule.required()
+            validation: rule => rule.warning('Must be updated')
         }),
         defineField({
             name: 'address',
