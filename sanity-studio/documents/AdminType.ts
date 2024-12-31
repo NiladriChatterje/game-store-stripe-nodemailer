@@ -6,14 +6,14 @@ const AdminType = defineType({
     type: 'document',
     fields: [
         defineField({
-            name: 'Username',
+            name: 'username',
             title: 'Username',
             type: 'string',
             validation: rule => rule.required()
         }),
         defineField({
             name: 'adminId',
-            title: 'ADMIN ID',
+            title: 'Admin ID',
             type: 'string',
             validation: rule => rule.required()
         }),
@@ -41,7 +41,7 @@ const AdminType = defineType({
             validation: rule => rule.required()
         }),
         defineField({
-            name: 'SubscriptionPlan',
+            name: 'subscriptionPlan',
             title: 'Subscription',
             type: 'array',
             of: [

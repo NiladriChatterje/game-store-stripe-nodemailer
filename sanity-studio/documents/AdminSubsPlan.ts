@@ -12,13 +12,7 @@ export const plansObject = defineType({
             validation: rule => rule.required()
 
         }),
-        defineField({
-            name: 'activeDays',
-            title: 'Active Days',
-            type: 'number',
-            validation: rule => rule.required()
 
-        }),
         defineField({
             name: 'expireDate',
             title: 'Plan Expiration',
@@ -28,9 +22,7 @@ export const plansObject = defineType({
                 date.setDate(date.getDate() + 30);
                 return date.toISOString();
             },
-            validation: rule => rule.required().custom((context) => {
-                return true;
-            })
+            validation: rule => rule.required().min(rule.valueOfField('activeDate'))
         })]
 })
 
@@ -63,13 +55,7 @@ export const AdminSubsPlan = defineType({
             type: 'number',
             validation: rule => rule.required()
         }),
-        defineField({
-            name: 'isPlanActive',
-            title: 'Plan Active',
-            type: 'boolean',
-            initialValue: false,
-            validation: rule => rule.required()
-        }),
+
         defineField({
             name: 'planSchemeList',
             title: 'Plans',
