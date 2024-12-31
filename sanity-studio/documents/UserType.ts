@@ -1,6 +1,6 @@
 import { defineField } from "sanity";
 export const UserType = defineField({
-    name: 'UserType',
+    name: 'user',
     title: 'User',
     type: 'document',
     fields: [

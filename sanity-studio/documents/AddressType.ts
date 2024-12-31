@@ -8,12 +8,12 @@ export const AddressObject = defineType({
         defineField({
             name: 'pinCode',
             title: 'PIN Code',
-            type: 'number',
-            validation: rule => rule.required().positive().max(999999).min(100000)
+            type: 'string',
+            validation: rule => rule.required().length(6)
         }),
         defineField({
-            name: 'region',
-            title: 'Region',
+            name: 'county',
+            title: 'County',
             type: 'string',
         }),
         defineField({
@@ -22,8 +22,8 @@ export const AddressObject = defineType({
             type: 'string',
         }),
         defineField({
-            name: 'locality',
-            title: 'Locality',
+            name: 'state',
+            title: 'State',
             type: 'string',
         }),
     ]

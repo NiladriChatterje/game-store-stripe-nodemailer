@@ -5,5 +5,7 @@ import { productPriceType } from '../documents/ProductPriceType'
 import { AddressObject } from '../documents/AddressType';
 import { AdminSubsPlan, plansObject } from '../documents/AdminSubsPlan';
 import { type SchemaTypeDefinition } from 'sanity';
+import { orderType } from '../documents/OrderType';
 
-export const schemaTypes: SchemaTypeDefinition[] = [AdminType, productPriceType, plansObject, ProductType, UserType, AddressObject, AdminSubsPlan]
+export const schemaTypes: SchemaTypeDefinition[] = [AdminType, orderType,
+    productPriceType, plansObject, ProductType, UserType, AddressObject, AdminSubsPlan]

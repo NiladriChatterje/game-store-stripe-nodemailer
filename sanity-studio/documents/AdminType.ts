@@ -56,9 +56,8 @@ const AdminType = defineType({
         defineField({
             name: 'ordersServed',
             title: 'Orders Served',
-            type: 'number',
-            initialValue: 0,
-            validation: rule => rule.min(0),
+            type: 'array',
+            of: [{ type: 'order' }]
         }),
         defineField({
             name: 'productReferenceAfterListing',
