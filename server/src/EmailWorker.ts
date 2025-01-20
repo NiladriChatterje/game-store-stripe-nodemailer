@@ -2,7 +2,7 @@ import { parentPort, workerData } from 'worker_threads';
 import nodemailer from 'nodemailer';
 
 
-export function sendEmail({ recipient, confirmation }) {
+export function sendEmail({ recipient, confirmation }: { recipient: string, confirmation: string }) {
     return new Promise((resolve, reject) => {
         const transportObject = nodemailer.createTransport({
             service: 'gmail',
@@ -35,6 +35,6 @@ export function sendEmail({ recipient, confirmation }) {
 
 sendEmail(workerData)
     .then((resolve) => {
-        parentPort.postMessage(true);
+        parentPort?.postMessage(true);
     })
-    .catch(e => parentPort.postMessage(false));
+    .catch(e => parentPort?.postMessage(false));

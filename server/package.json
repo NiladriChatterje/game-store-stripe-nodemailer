@@ -24,7 +24,7 @@
   "scripts": {
     "build": "npx tsc",
     "start": "node --watch ./dist/index.js",
-    "dev": "npx tsx src/index.ts"
+    "dev": "npx tsc && node --watch dist/index.js"
   },
   "keywords": [],
   "author": "",

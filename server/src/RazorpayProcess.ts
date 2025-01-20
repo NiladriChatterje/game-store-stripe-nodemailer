@@ -4,7 +4,7 @@ import shortid from 'shortid';
 import dotenv from 'dotenv';
 dotenv.config();
 
-async function createOrderID({ price, currency }) {
+async function createOrderID({ price, currency }: { price: string, currency: string }) {
     try {
 
         const razorpay = new Razorpay({
@@ -16,12 +16,12 @@ async function createOrderID({ price, currency }) {
             currency,
             receipt: shortid()
         });
-        parentPort.postMessage({ status: 200, ...response })
-    } catch (e) {
-        parentPort.postMessage({
+        parentPort?.postMessage({ ...response, status: 200 })
+    } catch (e: Error | any) {
+        parentPort?.postMessage({
             status: 500,
             error: {
-                message: e.message,
+                message: e?.message,
             },
         });
     }
