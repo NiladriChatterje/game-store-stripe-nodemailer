@@ -28,6 +28,6 @@ export function sendEmail({ recipient, confirmation }) {
 }
 sendEmail(workerData)
     .then((resolve) => {
-    parentPort.postMessage(true);
+    parentPort === null || parentPort === void 0 ? void 0 : parentPort.postMessage(true);
 })
-    .catch(e => parentPort.postMessage(false));
+    .catch(e => parentPort === null || parentPort === void 0 ? void 0 : parentPort.postMessage(false));

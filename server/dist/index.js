@@ -17,7 +17,7 @@ import { createClient } from '@sanity/client';
 dotenv.config();
 const brokers = [];
 if (cluster.isPrimary) {
-    new Worker('./src/BackgroundPingProcess.js');
+    new Worker('./dist/BackgroundPingProcess.js');
     let p;
     for (let i = 0; i < availableParallelism(); i++) {
         p = cluster.fork();
@@ -57,7 +57,7 @@ else {
             },
             transferList: req.body
         };
-        const worker = new Worker('./src/EmailWorker.js', NotClonedObject);
+        const worker = new Worker('./dist/EmailWorker.js', NotClonedObject);
         worker.on('message', (value) => {
             res.send(value);
         });
@@ -66,7 +66,7 @@ else {
         const { price, currency } = req.body;
         console.log(price);
         console.log(req.body);
-        const worker_razorpay = new Worker('./src/RazorpayProcess.js', {
+        const worker_razorpay = new Worker('./dist/RazorpayProcess.js', {
             workerData: {
                 price, currency
             }
@@ -86,7 +86,7 @@ else {
     app.post('/fetch-mail-otp', (req, res) => {
         var _a;
         const OTP = Math.trunc(Math.random() * 10 ** 6);
-        const worker = new Worker('./src/EmailWorker.js', {
+        const worker = new Worker('./dist/EmailWorker.js', {
             workerData: {
                 recipient: (_a = req.body) === null || _a === void 0 ? void 0 : _a.recipient,
                 confirmation: OTP
@@ -102,7 +102,7 @@ else {
     app.post('/fetch-phone-otp', (req, res) => {
         var _a;
         const OTP = Math.trunc(Math.random() * 10 ** 6);
-        const worker = new Worker('./src/PhoneWorker.js', {
+        const worker = new Worker('./dist/PhoneWorker.js', {
             workerData: {
                 recipient: (_a = req.body) === null || _a === void 0 ? void 0 : _a.phone,
                 confirmation: OTP
