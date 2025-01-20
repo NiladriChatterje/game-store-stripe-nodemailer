@@ -4,15 +4,15 @@ import cluster from 'cluster';
 import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-
+import { Kafka } from 'kafkajs'
+import { availableParallelism } from 'os';
+import { createClient } from '@sanity/client';
 dotenv.config();
 
 type sendMailFunctionParamsTypeDeclaration = {
     recipient: string; confirmation: number;
 }
-import { availableParallelism } from 'os';
-import { createClient } from '@sanity/client';
-
+const brokers: readonly string[] = []
 if (cluster.isPrimary) {
     new Worker('./src/BackgroundPingProcess.js');
     let p;
@@ -22,6 +22,7 @@ if (cluster.isPrimary) {
             p = cluster.fork();
         })
     }
+
 } else {
     const app: Express = express();
 

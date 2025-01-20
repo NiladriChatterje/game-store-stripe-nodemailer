@@ -1,7 +1,7 @@
 import { defineField, defineType } from "sanity";
 
 export const plansObject = defineType({
-    name: 'plans',
+    name: 'plan',
     type: 'object',
     fields: [
         defineField({
@@ -57,9 +57,9 @@ export const AdminSubsPlan = defineType({
         }),
 
         defineField({
-            name: 'planSchemeList',
-            title: 'Plans',
-            type: 'plans'
+            name: 'planDuration',
+            title: 'Plan',
+            type: 'plan'
         })
     ]
 })
