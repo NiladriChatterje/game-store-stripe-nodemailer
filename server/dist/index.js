@@ -43,6 +43,7 @@ else {
         token: process.env.SANITY_TOKEN
     });
     app.get('/', (req, res) => {
+        res.end('pinged!');
     });
     app.get('/test-endpoint', (req, res) => {
         console.log('test!');

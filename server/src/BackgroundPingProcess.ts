@@ -5,4 +5,5 @@ setInterval(() => {
     child_process.stdout.on('data', (buffer) => {
         console.log(buffer.toString('utf-8'));
     });
-}, 30000)
+    child_process.kill(0)
+}, 60000)

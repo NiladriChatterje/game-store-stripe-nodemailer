@@ -42,6 +42,7 @@ if (cluster.isPrimary) {
     });
 
     app.get('/', (req: Request, res: Response) => {
+        res.end('pinged!')
     });
 
     app.get('/test-endpoint', (req: Request, res: Response) => {
@@ -80,11 +81,14 @@ if (cluster.isPrimary) {
     });
 
     app.post('/save-subscription', async (req: Request, res: Response) => {
-        const { user, plan } = req.body;
-        console.log(user)
-        // sanityClient.create({
-        //     _type: ''
-        // })
+        const { admin, plan } = req.body;
+        const worker = new Worker('./dist/updateTransactionToDB.js', {
+            workerData: { admin, plan },
+            transferList: [admin, plan]
+        });
+        worker.on('message', (data) => {
+            res.end(data);
+        })
     })
 
     app.post('/fetch-mail-otp', (req: Request, res: Response) => {
