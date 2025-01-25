@@ -1,5 +1,6 @@
 import { parentPort, workerData } from 'worker_threads';
 import nodemailer from 'nodemailer';
+import { Kafka } from 'kafkajs';
 
 
 export function sendEmail({ recipient, confirmation }: { recipient: string, confirmation: string }) {

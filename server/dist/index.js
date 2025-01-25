@@ -43,7 +43,6 @@ else {
         token: process.env.SANITY_TOKEN
     });
     app.get('/', (req, res) => {
-        res.send('pinged!');
     });
     app.get('/test-endpoint', (req, res) => {
         console.log('test!');
@@ -78,7 +77,7 @@ else {
     }));
     app.post('/save-subscription', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const { user, plan } = req.body;
-        console.log(req.body);
+        console.log(user);
         // sanityClient.create({
         //     _type: ''
         // })

@@ -4,7 +4,6 @@ import cluster from 'cluster';
 import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { Kafka } from 'kafkajs'
 import { availableParallelism } from 'os';
 import { createClient } from '@sanity/client';
 dotenv.config();
@@ -43,7 +42,6 @@ if (cluster.isPrimary) {
     });
 
     app.get('/', (req: Request, res: Response) => {
-        res.send('pinged!');
     });
 
     app.get('/test-endpoint', (req: Request, res: Response) => {
@@ -83,7 +81,7 @@ if (cluster.isPrimary) {
 
     app.post('/save-subscription', async (req: Request, res: Response) => {
         const { user, plan } = req.body;
-        console.log(req.body)
+        console.log(user)
         // sanityClient.create({
         //     _type: ''
         // })
