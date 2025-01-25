@@ -11,6 +11,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@sanity/client": "^6.27.1",
+    "dotenv": "^16.4.7",
     "kafkajs": "^2.2.4"
   },
   "devDependencies": {
