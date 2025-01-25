@@ -5,7 +5,6 @@ import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { availableParallelism } from 'os';
-import { createClient } from '@sanity/client';
 dotenv.config();
 
 type sendMailFunctionParamsTypeDeclaration = {
@@ -32,14 +31,6 @@ if (cluster.isPrimary) {
         res.setHeader('Access-Control-Allow-Origin', '*');
         next();
     })
-
-    const sanityClient = createClient({
-        projectId: process.env.SANITY_PROJECT_ID,
-        dataset: 'production',
-        apiVersion: '2024-12-21',
-        useCdn: true,
-        token: process.env.SANITY_TOKEN
-    });
 
     app.get('/', (req: Request, res: Response) => {
         res.end('pinged!')
@@ -87,7 +78,7 @@ if (cluster.isPrimary) {
             transferList: [admin, plan]
         });
         worker.on('message', (data) => {
-            res.end(data);
+            res.json(data);
         })
     })
 

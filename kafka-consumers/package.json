@@ -12,5 +12,8 @@
   "description": "",
   "dependencies": {
     "kafkajs": "^2.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10"
   }
 }

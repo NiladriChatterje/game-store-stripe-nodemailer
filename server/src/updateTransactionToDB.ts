@@ -20,11 +20,16 @@ const kafka = new Kafka({
 
 const producer = kafka.producer();
 
-const { user, plan } = workerData;
-
 async function produce() {
     await producer.connect();
-
+    producer.send({
+        topic: 'admin-subscription-transaction',
+        messages: [{ value: JSON.stringify(workerData) }]
+    }).then(result => {
+        console.log(result);
+    }).finally(async () => {
+        await producer.disconnect()
+    })
 }
 
 produce().then(() => {
