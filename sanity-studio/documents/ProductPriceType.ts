@@ -26,7 +26,7 @@ export const productPriceType = defineType({
             name: "discountPercentage",
             title: 'Discount %',
             type: 'number',
-            validation: rule => rule.positive().max(100),
+            validation: rule => rule.positive().max(50),
             initialValue: 0
         })
     ]
