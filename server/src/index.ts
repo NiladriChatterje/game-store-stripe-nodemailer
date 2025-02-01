@@ -5,6 +5,7 @@ import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { availableParallelism } from 'os';
+import { Buffer } from 'node:buffer';
 // import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 
@@ -83,9 +84,14 @@ if (cluster.isPrimary) {
     });
 
     app.post('/add-product', (req: Request, res: Response) => {
+        const { imagesBase64 }: { imagesBase64: string[] } = req.body
         console.log(req.headers);
         console.log(req.body);
-        console.log(req.body?.imagesBase64.length);
+        const bufferArr: Buffer[] = []
+        for (let i of imagesBase64)
+            bufferArr.push(Buffer.from(i, 'base64'));
+
+        console.log('image array buffer', bufferArr)
         res.end('ok')
     })
 

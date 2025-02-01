@@ -13,6 +13,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { availableParallelism } from 'os';
+import { Buffer } from 'node:buffer';
 // import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 // const diskStorageConfig = diskStorage({
@@ -78,10 +79,13 @@ else {
         });
     }));
     app.post('/add-product', (req, res) => {
-        var _a;
+        const { imagesBase64 } = req.body;
         console.log(req.headers);
         console.log(req.body);
-        console.log((_a = req.body) === null || _a === void 0 ? void 0 : _a.imagesBase64.length);
+        const bufferArr = [];
+        for (let i of imagesBase64)
+            bufferArr.push(Buffer.from(i, 'base64'));
+        console.log('image array buffer', bufferArr);
         res.end('ok');
     });
     app.post('/save-subscription', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
