@@ -37,7 +37,7 @@ if (cluster.isPrimary) {
 else {
     const app = express();
     app.use(cors());
-    app.use(express.json({ limit: '50mb' }));
+    app.use(express.json({ limit: '25mb' }));
     app.use(express.urlencoded({ extended: true, limit: '25mb' }));
     app.use((req, res, next) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -78,8 +78,10 @@ else {
         });
     }));
     app.post('/add-product', (req, res) => {
+        var _a;
         console.log(req.headers);
         console.log(req.body);
+        console.log((_a = req.body) === null || _a === void 0 ? void 0 : _a.imagesBase64.length);
         res.end('ok');
     });
     app.post('/save-subscription', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
