@@ -5,14 +5,25 @@ import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { availableParallelism } from 'os';
+// import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 
-type sendMailFunctionParamsTypeDeclaration = {
-    recipient: string; confirmation: number;
-}
-const brokers: readonly string[] = []
+
+// const diskStorageConfig = diskStorage({
+//     destination(req, file, callback) {
+//         console.log(file);
+//         callback(null, 'uploaded-images/');
+//     },
+//     // filename: (req, file, callback) => {
+
+//     // }
+// });
+
+// const upload = multer({ storage: diskStorageConfig })
+
 if (cluster.isPrimary) {
     new Worker('./dist/BackgroundPingProcess.js');
+
     let p;
     for (let i = 0; i < availableParallelism(); i++) {
         p = cluster.fork();
@@ -25,7 +36,7 @@ if (cluster.isPrimary) {
     const app: Express = express();
 
     app.use(cors());
-    app.use(express.json({ limit: '25mb' }));
+    app.use(express.json({ limit: '50mb' }));
     app.use(express.urlencoded({ extended: true, limit: '25mb' }));
     app.use((req: Request, res: Response, next: NextFunction) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -71,9 +82,15 @@ if (cluster.isPrimary) {
         })
     });
 
+    app.post('/add-product', (req: Request, res: Response) => {
+        console.log(req.headers);
+        console.log(req.body);
+        res.end('ok')
+    })
+
     app.post('/save-subscription', async (req: Request, res: Response) => {
         const { admin, plan } = req.body;
-        const worker = new Worker('./dist/updateTransactionToDB.js', {
+        const worker = new Worker('./dist/updateAdminSubsTransactionToDB.js', {
             workerData: { admin, plan },
             transferList: [admin, plan]
         });
