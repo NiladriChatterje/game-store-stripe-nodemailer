@@ -86,21 +86,20 @@ if (cluster.isPrimary) {
     });
 
     app.post('/add-product', async (req: Request, res: Response) => {
-        const { imagesBase64 }: { imagesBase64: { extension: string; base64: string }[] } = req.body
-        console.log(req.headers);
-        console.log(req.body);
-        const bufferArr: Buffer[] = []
-        for (let i of imagesBase64)
-            bufferArr.push(Buffer.from(i.base64?.split(',')[1], 'base64'));
 
-        let h = 0
-        for (let i = 0; i < bufferArr.length; i++) {
-            writeFile('./uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
-                if (err)
-                    console.log(err);
-            });
-            h++
-        }
+        // let h = 0
+        // for (let i = 0; i < bufferArr.length; i++) {
+        //     writeFile('./uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
+        //         if (err)
+        //             console.log(err);
+        //     });
+        //     h++
+        // }
+        const worker = new Worker('./dist/ProductDetailsHandling.js')
+        worker.on('message', (data) => {
+
+        });
+        worker.postMessage(req.body, [req.body])
         res.end('ok')
     })
 
