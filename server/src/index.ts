@@ -6,6 +6,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { availableParallelism } from 'os';
 import { Buffer } from 'node:buffer';
+import { open, openSync, writeFile } from 'node:fs';
+import path from 'node:path';
 // import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 
@@ -83,15 +85,22 @@ if (cluster.isPrimary) {
         })
     });
 
-    app.post('/add-product', (req: Request, res: Response) => {
-        const { imagesBase64 }: { imagesBase64: string[] } = req.body
+    app.post('/add-product', async (req: Request, res: Response) => {
+        const { imagesBase64 }: { imagesBase64: { extension: string; base64: string }[] } = req.body
         console.log(req.headers);
         console.log(req.body);
         const bufferArr: Buffer[] = []
         for (let i of imagesBase64)
-            bufferArr.push(Buffer.from(i, 'base64'));
+            bufferArr.push(Buffer.from(i.base64?.split(',')[1], 'base64'));
 
-        console.log('image array buffer', bufferArr)
+        let h = 0
+        for (let i = 0; i < bufferArr.length; i++) {
+            writeFile('./uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
+                if (err)
+                    console.log(err);
+            });
+            h++
+        }
         res.end('ok')
     })
 
