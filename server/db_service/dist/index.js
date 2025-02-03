@@ -13,8 +13,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { availableParallelism } from 'os';
-import { Buffer } from 'node:buffer';
-import { writeFile } from 'node:fs';
 // import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 // const diskStorageConfig = diskStorage({
@@ -80,21 +78,18 @@ else {
         });
     }));
     app.post('/add-product', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-        var _a;
-        const { imagesBase64 } = req.body;
-        console.log(req.headers);
-        console.log(req.body);
-        const bufferArr = [];
-        for (let i of imagesBase64)
-            bufferArr.push(Buffer.from((_a = i.base64) === null || _a === void 0 ? void 0 : _a.split(',')[1], 'base64'));
-        let h = 0;
-        for (let i = 0; i < bufferArr.length; i++) {
-            writeFile('./uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
-                if (err)
-                    console.log(err);
-            });
-            h++;
-        }
+        // let h = 0
+        // for (let i = 0; i < bufferArr.length; i++) {
+        //     writeFile('./uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
+        //         if (err)
+        //             console.log(err);
+        //     });
+        //     h++
+        // }
+        const worker = new Worker('./dist/ProductDetailsHandling.js');
+        worker.on('message', (data) => {
+        });
+        worker.postMessage(req.body, [req.body]);
         res.end('ok');
     }));
     app.post('/save-subscription', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
