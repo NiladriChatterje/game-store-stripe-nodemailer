@@ -12,14 +12,8 @@ import { parentPort, workerData } from "worker_threads";
 import { Kafka } from 'kafkajs';
 import { createClient } from "@sanity/client";
 import dotenv from 'dotenv';
+import { sanityConfig } from '../utils/index.js';
 dotenv.config();
-const sanityConfig = {
-    projectId: process.env.SANITY_PROJECT_ID,
-    dataset: 'production',
-    apiVersion: '2024-12-21',
-    useCdn: true,
-    token: process.env.SANITY_TOKEN
-};
 const sanityClient = createClient(sanityConfig);
 const kafka = new Kafka({
     clientId: 'xv-store',
