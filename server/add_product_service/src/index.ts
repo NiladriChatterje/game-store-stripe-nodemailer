@@ -1,8 +1,9 @@
 import cluster from 'node:cluster';
 import dotenv from 'dotenv';
-import express, { Express, Request, Response, NextFunction } from 'express';
+import expressApp, { Express, Request, Response, NextFunction } from 'express';
 import { spawn } from 'node:child_process';
 import { availableParallelism } from 'node:os';
+import cors from 'cors'
 
 if (cluster.isPrimary) {
     setInterval(() => {
@@ -23,4 +24,13 @@ if (cluster.isPrimary) {
         });
         i++
     }
+} else {
+    const express: Express = expressApp();
+    express.use(cors({
+        origin: ['localhost:3000', 'localhost:5173']
+    }));
+
+
+    express.listen(5001, () => { console.log('Listening on Port : 5001') })
+
 }
