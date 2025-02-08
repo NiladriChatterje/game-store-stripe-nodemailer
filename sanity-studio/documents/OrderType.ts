@@ -12,13 +12,16 @@ export const orderType = defineType({
         }),
         defineField({
             name: 'product',
-            type: 'reference',
-            to: [{ type: 'productType' }]
+            type: 'array',
+            of: [{
+                type: 'reference',
+                to: { type: 'productType' }
+            }]
         }),
         defineField({
             name: 'qty',
             type: 'number',
-            validation: rule => rule.required().positive()
+            validation: rule => rule.required().positive().min(1)
         }),
 
     ]
