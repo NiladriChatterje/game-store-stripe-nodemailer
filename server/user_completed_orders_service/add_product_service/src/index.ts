@@ -7,7 +7,7 @@ import cors from 'cors'
 
 if (cluster.isPrimary) {
     setInterval(() => {
-        const child = spawn('curl', ['-X', 'GET', 'localhost:5001']);
+        const child = spawn('curl', ['-X', 'GET', 'localhost:5002']);
         child.kill(0);
     }, 25000);
 
@@ -31,6 +31,6 @@ if (cluster.isPrimary) {
     }));
 
 
-    express.listen(5001, () => { console.log('add_product_by_admin : 5001') })
+    express.listen(5002, () => { console.log('user_completed_order_service : 5002') })
 
 }

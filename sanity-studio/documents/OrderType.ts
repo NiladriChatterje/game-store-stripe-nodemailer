@@ -1,8 +1,8 @@
 import { defineField, defineType } from 'sanity'
 
-export const orderType = defineType({
+export const ProductType = defineType({
     name: 'order',
-    title: 'ordertype',
+    title: 'ProductType',
     type: 'object',
     fields: [
         defineField({

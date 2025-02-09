@@ -80,6 +80,13 @@ export const ProductType = defineType({
             options: {
                 layout: 'tags'
             }
+        }),
+        defineField({
+            name: 'discount',
+            title: 'Discount',
+            type: 'number',
+            validation: rule => rule.max(100).min(0)
+
         })
     ]
 })
