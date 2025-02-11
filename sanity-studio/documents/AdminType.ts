@@ -57,7 +57,7 @@ const AdminType = defineType({
             name: 'ordersServed',
             title: 'Orders Served',
             type: 'array',
-            of: [{ type: 'order' }]
+            of: [{ type: 'reference', to: { type: 'order' } }]
         }),
         defineField({
             name: 'productReferenceAfterListing',

@@ -12,7 +12,7 @@ export const UserType = defineField({
         }),
         defineField({
             name: 'userId',
-            title: 'USER ID',
+            title: 'User Id',
             type: 'string',
             validation: rule => rule.required()
         }),
@@ -29,9 +29,14 @@ export const UserType = defineField({
             validation: rule => rule.required().email()
         }),
         defineField({
+            name: 'geoPoint',
+            type: 'geopoint',
+            validation: rule => rule.required()
+        }),
+        defineField({
             name: 'address',
             title: 'Address',
-            type: 'addressType'
+            type: 'AddressObjectType'
         })
     ]
 })
