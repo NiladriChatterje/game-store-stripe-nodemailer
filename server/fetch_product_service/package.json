@@ -24,7 +24,11 @@
     "start": "nodemon ./src/index.ts",
     "dev": "nodemon ./src/index.ts"
   },
-  "keywords": [],
+  "keywords": [
+    "product_service",
+    "product-db",
+    "inventory-database"
+  ],
   "author": "",
   "license": "UNLICENSED",
   "description": "",
