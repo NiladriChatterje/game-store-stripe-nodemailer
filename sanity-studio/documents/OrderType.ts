@@ -23,6 +23,16 @@ export const OrderType = defineType({
             type: 'number',
             validation: rule => rule.required().positive().min(1)
         }),
+        defineField({
+            name: 'status',
+            type: 'string',
+            validation: rule => rule.required(),
+            description: 'status of the order if its orderPlaced | dispatched | shipping | shipped',
+            options: {
+                list: ['orderPlaced', 'dispatched', 'shipping', 'shipped'],
+                layout: 'radio'
+            }
+        }),
 
     ]
 });
