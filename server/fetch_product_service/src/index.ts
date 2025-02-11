@@ -8,6 +8,7 @@ import { availableParallelism } from 'os';
 import { Buffer } from 'node:buffer';
 import { open, openSync, writeFile } from 'node:fs';
 import path from 'node:path';
+import { ProductType } from 'declarations.js';
 // import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 
@@ -85,7 +86,7 @@ if (cluster.isPrimary) {
         })
     });
 
-    app.post('/add-product', async (req: Request, res: Response) => {
+    app.post('/add-product', async (req: Request<{}, {}>, res: Response) => {
 
         // let h = 0
         // for (let i = 0; i < bufferArr.length; i++) {
@@ -104,10 +105,10 @@ if (cluster.isPrimary) {
     })
 
     app.post('/save-subscription', async (req: Request, res: Response) => {
-        const { admin, plan } = req.body;
+        const { adminId, admin_document_id, plan } = req.body;
         const worker = new Worker('./dist/updateAdminSubsTransactionToDB.js', {
-            workerData: { admin, plan },
-            transferList: [admin, plan]
+            workerData: { adminId, plan },
+            transferList: [adminId, plan]
         });
         worker.on('message', (data) => {
             res.json(data);

@@ -15,15 +15,17 @@ const kafka = new Kafka({
 const producer = kafka.producer();
 
 async function produce() {
-    await producer.connect();
-    producer.send({
+    const transaction = await producer.transaction();
+    transaction.send({
         topic: 'admin-subscription-transaction',
         messages: [{ value: JSON.stringify(workerData) }]
-    }).then(result => {
+    }).then(async result => {
         console.log(result);
-    }).finally(async () => {
-        await producer.disconnect()
-    })
+        //sanity works
+        await transaction.commit();
+    }).catch(async e => {
+        await transaction.abort();
+    }).finally(async () => { })
 }
 
 produce().then(() => {
