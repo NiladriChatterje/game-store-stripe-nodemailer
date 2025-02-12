@@ -8,7 +8,7 @@ import { availableParallelism } from 'os';
 import { Buffer } from 'node:buffer';
 import { open, openSync, writeFile } from 'node:fs';
 import path from 'node:path';
-import { ProductType } from 'declarations.js';
+import type { ProductType } from '../declaration/index.d.ts';
 // import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 
@@ -31,7 +31,7 @@ if (cluster.isPrimary) {
     let p;
     for (let i = 0; i < availableParallelism(); i++) {
         p = cluster.fork();
-        p.on('exit', (statusCode: number) => {
+        p.on('exit', (_statusCode: number) => {
             p = cluster.fork();
         })
     }
