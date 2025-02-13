@@ -22,8 +22,8 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "npx tsc",
-    "start": "nodemon ./src/index.ts",
-    "dev": "nodemon ./src/index.ts"
+    "start": "tsc-watch --onsuccess \"node ./dist/index.js\"",
+    "dev": "tsc-watch --onsuccess \"node ./dist/index.js\""
   },
   "keywords": [
     "product_service",
@@ -38,8 +38,7 @@
     "@types/module-alias": "^2.0.4",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.7.5",
-    "nodemon": "^3.1.9",
-    "ts-node": "^10.9.2",
+    "tsc-watch": "^6.2.1",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.6.3"
   },

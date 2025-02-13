@@ -1,3 +1,9 @@
 node_modules
+
+#avoid *.env.*
 .env
 .env.*
+
+#dist ignore
+dist
+dist/*
