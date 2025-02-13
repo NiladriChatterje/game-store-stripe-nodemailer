@@ -1,13 +1,44 @@
 {
-    "name": "userdata_service",
-    "version": "1.0.0",
-    "description": "",
-    "main": "index.js",
-    "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "type": "commonjs"
+  "type": "module",
+  "dependencies": {
+    "@sanity/cli": "^3.0.6",
+    "@sanity/client": "^6.22.5",
+    "@types/cors": "^2.8.17",
+    "@types/dotenv": "^6.1.1",
+    "@types/nodemailer": "^6.4.16",
+    "@types/shortid": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "kafkajs": "^2.2.4",
+    "nodemailer": "^6.9.1",
+    "razorpay": "^2.9.5",
+    "shortid": "^2.2.16",
+    "tsx": "^4.19.1"
+  },
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "npx tsc",
+    "start": "nodemon ./src/index.ts",
+    "dev": "nodemon ./src/index.ts"
+  },
+  "keywords": [
+    "product_service",
+    "product-db",
+    "inventory-database"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "description": "",
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.7.5",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.6.3"
+  }
 }
