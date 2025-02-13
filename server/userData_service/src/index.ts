@@ -1,4 +1,4 @@
-
+import 'module-alias/register';
 import { Worker } from 'worker_threads';
 import cluster from 'cluster';
 import express, { Express, NextFunction, Request, Response } from 'express';
@@ -8,7 +8,7 @@ import { availableParallelism } from 'os';
 import { Buffer } from 'node:buffer';
 import { open, openSync, writeFile } from 'node:fs';
 import path from 'node:path';
-import type { ProductType } from '../declaration/index.d.ts';
+import type { ProductType } from '@declaration/index.d.ts';
 // import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 
