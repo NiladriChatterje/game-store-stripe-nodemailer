@@ -8,7 +8,7 @@ dotenv.config();
 
 
 if (cluster.isPrimary) {
-    new Worker('./src/BackgroundPingProcess.js');
+    new Worker('./dist/BackgroundPingProcess.js');
 
     let p;
     for (let i = 0; i < availableParallelism(); i++) {
@@ -41,7 +41,7 @@ if (cluster.isPrimary) {
         //     },
         //     transferList: req.body
         // }
-        // const worker = new Worker('./src/EmailWorker.js', NotClonedObject);
+        // const worker = new Worker('./dist/EmailWorker.js', NotClonedObject);
         // worker.on('message', (value: boolean) => {
         //     res.send(value);
         // });
@@ -52,7 +52,7 @@ if (cluster.isPrimary) {
         const { price, currency } = req.body
         console.log(price);
         console.log(req.body);
-        const worker_razorpay = new Worker('./src/RazorpayProcess.js', {
+        const worker_razorpay = new Worker('./dist/RazorpayProcess.js', {
             workerData: {
                 price, currency
             }
@@ -68,13 +68,13 @@ if (cluster.isPrimary) {
 
         // let h = 0
         // for (let i = 0; i < bufferArr.length; i++) {
-        //     writeFile('./uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
+        //     writeFile('./dist/uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
         //         if (err)
         //             console.log(err);
         //     });
         //     h++
         // }
-        const worker = new Worker('./src/ProductDetailsHandling.js')
+        const worker = new Worker('./dist/ProductDetailsHandling.js')
         worker.on('message', (data) => {
 
         });
@@ -84,7 +84,7 @@ if (cluster.isPrimary) {
 
     app.post('/save-subscription', async (req: Request, res: Response) => {
         const { adminId, admin_document_id, plan } = req.body;
-        const worker = new Worker('./src/updateAdminSubsTransactionToDB.js', {
+        const worker = new Worker('./dist/updateAdminSubsTransactionToDB.js', {
             workerData: { adminId, plan },
             transferList: [adminId, plan]
         });
@@ -95,7 +95,7 @@ if (cluster.isPrimary) {
 
     app.post('/fetch-mail-otp', (req: Request, res: Response) => {
         const OTP = Math.trunc(Math.random() * 10 ** 6);
-        const worker = new Worker('./src/EmailWorker.js', {
+        const worker = new Worker('./dist/EmailWorker.js', {
             workerData: {
                 recipient: req.body?.recipient,
                 confirmation: OTP
@@ -109,7 +109,7 @@ if (cluster.isPrimary) {
 
     app.post('/fetch-phone-otp', (req: Request, res: Response) => {
         const OTP = Math.trunc(Math.random() * 10 ** 6);
-        const worker = new Worker('./src/PhoneWorker.js', {
+        const worker = new Worker('./dist/PhoneWorker.js', {
             workerData: {
 
                 recipient: req.body?.phone,

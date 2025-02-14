@@ -21,7 +21,7 @@
   },
   "scripts": {
     "build": "npx tsc && tsc-alias",
-    "start": "node ./dist/index",
+    "start": "npx tsc && tsc-alias && node ./dist/index",
     "dev": "tsc && node ./dist/index"
   },
   "keywords": [
