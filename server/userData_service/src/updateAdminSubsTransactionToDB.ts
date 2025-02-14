@@ -2,7 +2,7 @@ import { parentPort, workerData } from "worker_threads";
 import { Kafka } from 'kafkajs';
 import { SanityClient, createClient } from "@sanity/client";
 import dotenv from 'dotenv'
-import { sanityConfig } from '../utils/index.js'
+import { sanityConfig } from './utils/index.js'
 dotenv.config();
 
 
