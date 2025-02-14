@@ -1,32 +1,14 @@
-import 'module-alias/register';
 import { Worker } from 'worker_threads';
 import cluster from 'cluster';
 import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { availableParallelism } from 'os';
-import { Buffer } from 'node:buffer';
-import { open, openSync, writeFile } from 'node:fs';
-import path from 'node:path';
-import type { ProductType } from '@declaration/index.d.ts';
-// import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config();
 
 
-// const diskStorageConfig = diskStorage({
-//     destination(req, file, callback) {
-//         console.log(file);
-//         callback(null, 'uploaded-images/');
-//     },
-//     // filename: (req, file, callback) => {
-
-//     // }
-// });
-
-// const upload = multer({ storage: diskStorageConfig })
-
 if (cluster.isPrimary) {
-    new Worker('./dist/BackgroundPingProcess.js');
+    new Worker('./src/BackgroundPingProcess.js');
 
     let p;
     for (let i = 0; i < availableParallelism(); i++) {
@@ -51,30 +33,26 @@ if (cluster.isPrimary) {
         res.end('pinged!')
     });
 
-    app.get('/test-endpoint', (req: Request, res: Response) => {
-        console.log('test!');
-        res.end('tested')
-    });
-
-    app.post('/send-email', (req: Request, res: Response) => {
-        console.log(req.body)
-        const NotClonedObject = {
-            workerData: {
-                value: req.body
-            },
-            transferList: req.body
-        }
-        const worker = new Worker('./dist/EmailWorker.js', NotClonedObject);
-        worker.on('message', (value: boolean) => {
-            res.send(value);
-        });
+    app.get('/fetch-user-data/:userId', (req: Request, res: Response) => {
+        console.log(req.params.userId);
+        // const NotClonedObject = {
+        //     workerData: {
+        //         value: req.body
+        //     },
+        //     transferList: req.body
+        // }
+        // const worker = new Worker('./src/EmailWorker.js', NotClonedObject);
+        // worker.on('message', (value: boolean) => {
+        //     res.send(value);
+        // });
+        res.write("hello guys");
     });
 
     app.post("/razorpay", async (req: Request, res: Response) => {
         const { price, currency } = req.body
         console.log(price);
         console.log(req.body);
-        const worker_razorpay = new Worker('./dist/RazorpayProcess.js', {
+        const worker_razorpay = new Worker('./src/RazorpayProcess.js', {
             workerData: {
                 price, currency
             }
@@ -96,7 +74,7 @@ if (cluster.isPrimary) {
         //     });
         //     h++
         // }
-        const worker = new Worker('./dist/ProductDetailsHandling.js')
+        const worker = new Worker('./src/ProductDetailsHandling.js')
         worker.on('message', (data) => {
 
         });
@@ -106,7 +84,7 @@ if (cluster.isPrimary) {
 
     app.post('/save-subscription', async (req: Request, res: Response) => {
         const { adminId, admin_document_id, plan } = req.body;
-        const worker = new Worker('./dist/updateAdminSubsTransactionToDB.js', {
+        const worker = new Worker('./src/updateAdminSubsTransactionToDB.js', {
             workerData: { adminId, plan },
             transferList: [adminId, plan]
         });
@@ -117,7 +95,7 @@ if (cluster.isPrimary) {
 
     app.post('/fetch-mail-otp', (req: Request, res: Response) => {
         const OTP = Math.trunc(Math.random() * 10 ** 6);
-        const worker = new Worker('./dist/EmailWorker.js', {
+        const worker = new Worker('./src/EmailWorker.js', {
             workerData: {
                 recipient: req.body?.recipient,
                 confirmation: OTP
@@ -131,7 +109,7 @@ if (cluster.isPrimary) {
 
     app.post('/fetch-phone-otp', (req: Request, res: Response) => {
         const OTP = Math.trunc(Math.random() * 10 ** 6);
-        const worker = new Worker('./dist/PhoneWorker.js', {
+        const worker = new Worker('./src/PhoneWorker.js', {
             workerData: {
 
                 recipient: req.body?.phone,
