@@ -4,6 +4,7 @@ import express, { Express, NextFunction, Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { availableParallelism } from 'os'
+import { ProductType } from '@declaration/index.js'
 dotenv.config()
 
 if (cluster.isPrimary) {
@@ -32,27 +33,27 @@ if (cluster.isPrimary) {
   })
 
   app.get(
-    '/fetch-user-data/:userId',
-    (req: Request<{ userId: string }>, res: Response) => {
-      console.log(req.params.userId)
-      // const NotClonedObject = {
-      //     workerData: {
-      //         value: req.body
-      //     },
-      //     transferList: req.body
-      // }
-      // const worker = new Worker('./dist/fetchUserData.js', NotClonedObject);
-      // worker.on('message', (value: boolean) => {
-      //     res.send(value);
-      // });
-      res.write('hello guys')
+    '/fetch-product/:productId',
+    (req: Request<{ productId: string }>, res: Response) => {
+      console.log(req.params.productId)
+      const NotClonedObject = {
+        workerData: {
+          value: req.params.productId,
+        },
+      }
+      const worker = new Worker('./dist/fetchUserData.js', NotClonedObject)
+      worker.on('message', (value: boolean) => {
+        res.status(200).send(value)
+      })
+      worker.on('error', (err: Error) => {
+        res.status(503).send('Service is down!')
+      })
     },
   )
 
-  app.post('/razorpay', async (req: Request, res: Response) => {
+  app.post('/add-product', async (req: Request<ProductType>, res: Response) => {
     const { price, currency } = req.body
-    console.log(price)
-    console.log(req.body)
+
     const worker_razorpay = new Worker('./dist/RazorpayProcess.js', {
       workerData: {
         price,

@@ -4,7 +4,24 @@ import express, { Express, NextFunction, Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { availableParallelism } from 'os'
+import { Buffer } from 'node:buffer'
+import { open, openSync, writeFile } from 'node:fs'
+import path from 'node:path'
+import type { ProductType } from '../declaration/index.js'
+// import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config()
+
+// const diskStorageConfig = diskStorage({
+//     destination(req, file, callback) {
+//         console.log(file);
+//         callback(null, 'uploaded-images/');
+//     },
+//     // filename: (req, file, callback) => {
+
+//     // }
+// });
+
+// const upload = multer({ storage: diskStorageConfig })
 
 if (cluster.isPrimary) {
   new Worker('./dist/BackgroundPingProcess.js')
@@ -31,23 +48,24 @@ if (cluster.isPrimary) {
     res.end('pinged!')
   })
 
-  app.get(
-    '/fetch-user-data/:userId',
-    (req: Request<{ userId: string }>, res: Response) => {
-      console.log(req.params.userId)
-      // const NotClonedObject = {
-      //     workerData: {
-      //         value: req.body
-      //     },
-      //     transferList: req.body
-      // }
-      // const worker = new Worker('./dist/fetchUserData.js', NotClonedObject);
-      // worker.on('message', (value: boolean) => {
-      //     res.send(value);
-      // });
-      res.write('hello guys')
-    },
-  )
+  app.get('/test-endpoint', (req: Request, res: Response) => {
+    console.log('test!')
+    res.end('tested')
+  })
+
+  app.post('/send-email', (req: Request, res: Response) => {
+    console.log(req.body)
+    const NotClonedObject = {
+      workerData: {
+        value: req.body,
+      },
+      transferList: req.body,
+    }
+    const worker = new Worker('./dist/EmailWorker.js', NotClonedObject)
+    worker.on('message', (value: boolean) => {
+      res.send(value)
+    })
+  })
 
   app.post('/razorpay', async (req: Request, res: Response) => {
     const { price, currency } = req.body
@@ -69,7 +87,7 @@ if (cluster.isPrimary) {
   app.post('/add-product', async (req: Request<{}, {}>, res: Response) => {
     // let h = 0
     // for (let i = 0; i < bufferArr.length; i++) {
-    //     writeFile('./dist/uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
+    //     writeFile('./uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
     //         if (err)
     //             console.log(err);
     //     });
