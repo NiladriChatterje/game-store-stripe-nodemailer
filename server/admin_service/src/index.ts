@@ -4,12 +4,11 @@ import express, { Express, NextFunction, Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { availableParallelism } from 'os'
-import { sanityConfig } from './utils/index.js'
-import { SanityClient, createClient } from '@sanity/client'
+
 
 dotenv.config()
 
-const sanityClient: SanityClient = createClient(sanityConfig)
+
 
 if (cluster.isPrimary) {
   new Worker('./dist/BackgroundPingProcess.js')
@@ -36,6 +35,30 @@ if (cluster.isPrimary) {
     res.end('pinged!')
   })
 
+  app.post(
+    '/create-admin',
+    (req: Request, res: Response) => {
+      console.log(req.body)
+      const NotClonedObject = {
+        workerData: {
+          adminData: req.body,
+        },
+        transferList:[req.body]
+      }
+      const worker = new Worker('./dist/CreateAdmin.js', NotClonedObject);
+
+      worker.on('message', (value) => {
+        console.log(value)
+        res.status(200).send(value)
+      })
+
+      worker.on('error', (value) => {
+        res.status(200).send(value)
+      })
+    },
+  );
+
+
   app.get(
     '/fetch-admin-data/:adminId',
     (req: Request<{ adminId: string }>, res: Response) => {
@@ -43,17 +66,16 @@ if (cluster.isPrimary) {
       const NotClonedObject = {
         workerData: {
           adminId: req.params.adminId,
-          sanityClient
-        },
-        transferList: req.body,
+        }
       }
       const worker = new Worker('./dist/fetchAdminData.js', NotClonedObject)
-      worker.on('message', (value: boolean) => {
-        res.send(value)
+      worker.on('message', (value) => {
+        console.log(value)
+        res.status(200).send(value)
       })
 
-      worker.on('error', (value: boolean) => {
-        res.send(value)
+      worker.on('error', (value) => {
+        res.status(200).send(value)
       })
     },
   )
@@ -73,7 +95,6 @@ if (cluster.isPrimary) {
       const worker = new Worker('./dist/UpdateInfo.js', {
         workerData: {
           userId: req.body.userId,
-          sanityClient,
         },
       })
 
@@ -87,11 +108,11 @@ if (cluster.isPrimary) {
       const worker = new Worker('./dist/AdminProducts.js', {
         workerData: {
           userId: req.params.adminId,
-          sanityClient,
         },
       })
 
       worker.on('message', data => {
+     
         res.status(200).send(data)
       })
     },
