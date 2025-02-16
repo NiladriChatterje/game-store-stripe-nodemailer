@@ -8,7 +8,7 @@ dotenv.config()
 async function addProductData(workerData: ProductType) {
   try {
     const kafka: Kafka = new Kafka({
-      clientId: 'product-service',
+      clientId: 'xv store',
       brokers: ['localhost:9092', 'localhost:9093'],
       ssl: true,
     })

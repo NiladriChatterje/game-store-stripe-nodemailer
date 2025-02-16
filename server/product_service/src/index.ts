@@ -51,22 +51,7 @@ if (cluster.isPrimary) {
     },
   )
 
-  app.post('/add-product', async (req: Request<ProductType>, res: Response) => {
-    const { price, currency } = req.body
-
-    const worker_razorpay = new Worker('./dist/RazorpayProcess.js', {
-      workerData: {
-        price,
-        currency,
-      },
-    })
-
-    worker_razorpay.on('message', msg_event => {
-      console.log('message : ' + msg_event)
-      res.json(msg_event)
-    })
-  })
-
+  //post to create the product
   app.post('/add-product', async (req: Request<{}, {}>, res: Response) => {
     // let h = 0
     // for (let i = 0; i < bufferArr.length; i++) {
@@ -82,7 +67,8 @@ if (cluster.isPrimary) {
     res.end('ok')
   })
 
-  app.post('/save-subscription', async (req: Request, res: Response) => {
+  //patch to update same product
+  app.patch('/add-product', async (req: Request, res: Response) => {
     const { adminId, admin_document_id, plan } = req.body
     const worker = new Worker('./dist/updateAdminSubsTransactionToDB.js', {
       workerData: { adminId, plan },
@@ -90,30 +76,6 @@ if (cluster.isPrimary) {
     })
     worker.on('message', data => {
       res.json(data)
-    })
-  })
-
-  app.post('/fetch-mail-otp', (req: Request, res: Response) => {
-    const OTP = Math.trunc(Math.random() * 10 ** 6)
-    const worker = new Worker('./dist/EmailWorker.js', {
-      workerData: {
-        recipient: req.body?.recipient,
-        confirmation: OTP,
-      },
-    })
-    worker.on('message', data => {
-      if (data) res.status(200).json({ OTP })
-      else res.status(500).json({ OTP: -1 })
-    })
-  })
-
-  app.post('/fetch-phone-otp', (req: Request, res: Response) => {
-    const OTP = Math.trunc(Math.random() * 10 ** 6)
-    const worker = new Worker('./dist/PhoneWorker.js', {
-      workerData: {
-        recipient: req.body?.phone,
-        confirmation: OTP,
-      },
     })
   })
 
