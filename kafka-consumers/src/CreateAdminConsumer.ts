@@ -21,18 +21,17 @@ async function createAdmin(){
         await sanityClient?.create({
             _type:'admin',
             adminId:user.adminId,
-            _type: 'admin',
             username: user?.username,
             email: user?.email,
             geoPoint: {
-              lat: latitude,
-              lng: longitude,
+              lat: user.geoPoint.lat,
+              lng: user.geoPoint.lng,
             },
             address: {
-              pinCode: placeResult?.properties?.postcode,
-              county: placeResult?.properties?.county,
-              state: placeResult?.properties?.state,
-              country: placeResult?.properties?.country,
+              pinCode: user.address.pinCode,
+              county: user.address.county,
+              state: user.address.state,
+              country: user.address.country,
             },
         });
        
