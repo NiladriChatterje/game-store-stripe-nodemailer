@@ -6,6 +6,12 @@
         "rootDir": "src",
         "target": "es2020",
         "module": "NodeNext",
-        "noImplicitAny": true
+        "noImplicitAny": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*":["src/*"],
+            "@declaration/*":["./declaration/*"]
+        },
+        "plugins": [ { "transform": "typescript-transform-paths" }]
     }
 }

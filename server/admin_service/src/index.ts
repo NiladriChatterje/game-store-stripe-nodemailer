@@ -49,11 +49,11 @@ if (cluster.isPrimary) {
 
       worker.on('message', (value) => {
         console.log(value)
-        res.status(200).send(value)
+        res.status(200).json(value)
       })
 
       worker.on('error', (value) => {
-        res.status(200).send(value)
+        res.status(200).json(value)
       })
     },
   );

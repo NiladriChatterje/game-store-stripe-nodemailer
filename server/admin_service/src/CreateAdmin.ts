@@ -1,5 +1,5 @@
 import {Kafka} from 'kafkajs';
-import { workerData } from 'worker_threads';
+import { parentPort, workerData } from 'worker_threads';
 
 const kafka = new Kafka({
     clientId:'xv store',
@@ -10,8 +10,13 @@ async function createAdmin(){
     const producer = kafka.producer();
     await producer.connect()
 
-    producer.send({
+    const recordMetaData = await producer.send({
         topic:'create-admin-record',
         messages:[{value:workerData}]
-    })
+    });
+
+    parentPort?.postMessage(recordMetaData);
+    producer.disconnect();
 }
+
+createAdmin();

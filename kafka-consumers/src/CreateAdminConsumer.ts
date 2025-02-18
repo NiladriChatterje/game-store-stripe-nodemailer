@@ -1,6 +1,7 @@
 import { createClient, SanityClient } from '@sanity/client';
 import {EachMessagePayload, Kafka} from 'kafkajs';
 import { sanityConfig } from './utils';
+import { AdminFieldsType } from '@declaration/index';
 
 async function createAdmin(){
     const kafka = new Kafka({
@@ -16,11 +17,11 @@ async function createAdmin(){
 
     
     async function handleMessage({heartbeat,pause,message,topic,partition}:EachMessagePayload){
-        const user = JSON.parse(message.value.toString());
+        const user:AdminFieldsType = JSON.parse(message.value.toString());
         await sanityClient?.create({
             _type:'admin',
             adminId:user.adminId
-        })
+        });
        
     }
 
