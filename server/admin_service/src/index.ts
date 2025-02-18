@@ -38,10 +38,10 @@ if (cluster.isPrimary) {
   app.post(
     '/create-admin',
     (req: Request, res: Response) => {
-      console.log(req.body)
+      console.log(req.body);
       const NotClonedObject = {
         workerData: {
-          adminData: req.body,
+          value:req.body,
         },
         transferList:[req.body]
       }

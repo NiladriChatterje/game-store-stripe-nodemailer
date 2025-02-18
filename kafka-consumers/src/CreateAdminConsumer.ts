@@ -20,7 +20,20 @@ async function createAdmin(){
         const user:AdminFieldsType = JSON.parse(message.value.toString());
         await sanityClient?.create({
             _type:'admin',
-            adminId:user.adminId
+            adminId:user.adminId,
+            _type: 'admin',
+            username: user?.username,
+            email: user?.email,
+            geoPoint: {
+              lat: latitude,
+              lng: longitude,
+            },
+            address: {
+              pinCode: placeResult?.properties?.postcode,
+              county: placeResult?.properties?.county,
+              state: placeResult?.properties?.state,
+              country: placeResult?.properties?.country,
+            },
         });
        
     }
@@ -33,18 +46,18 @@ async function createAdmin(){
 
 /*Structure sent while producing */
 // sanityClient?.create({
-//     _type: 'admin',
-//     username: user?.firstName,
-//     adminId: user?.id,
-//     email: user?.emailAddresses[0].emailAddress,
-//     geoPoint: {
-//       lat: latitude,
-//       lng: longitude,
-//     },
-//     address: {
-//       pinCode: placeResult?.properties?.postcode,
-//       county: placeResult?.properties?.county,
-//       state: placeResult?.properties?.state,
-//       country: placeResult?.properties?.country,
-//     },
+    // _type: 'admin',
+    // username: user?.firstName,
+    // adminId: user?.id,
+    // email: user?.emailAddresses[0].emailAddress,
+    // geoPoint: {
+    //   lat: latitude,
+    //   lng: longitude,
+    // },
+    // address: {
+    //   pinCode: placeResult?.properties?.postcode,
+    //   county: placeResult?.properties?.county,
+    //   state: placeResult?.properties?.state,
+    //   country: placeResult?.properties?.country,
+    // },
 //   })
