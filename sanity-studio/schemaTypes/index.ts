@@ -7,6 +7,9 @@ import { AdminSubsPlan, plansObject } from '../Objects/AdminSubsPlan';
 import { type SchemaTypeDefinition } from 'sanity';
 import { RegionToProducts } from '../documents/RegionBasedProducts';
 import { OrderType } from '../documents/OrderType';
+import { ShippingType } from '../documents/ShippingType';
+import { ShipperType } from '../documents/ShipperType';
 
-export const schemaTypes: SchemaTypeDefinition[] = [AdminType, RegionToProducts, OrderType,
+export const schemaTypes: SchemaTypeDefinition[] = [AdminType, RegionToProducts, OrderType,ShippingType,
+    ShipperType,
     productPriceType, plansObject, ProductType, UserType, AddressObject, AdminSubsPlan]

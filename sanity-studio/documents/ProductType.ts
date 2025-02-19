@@ -1,7 +1,7 @@
 import { defineField, defineType } from "sanity";
 
 export const ProductType = defineType({
-    name: 'productType',
+    name: 'product',
     title: 'Product',
     type: 'document',
     fields: [
@@ -88,5 +88,5 @@ export const ProductType = defineType({
             validation: rule => rule.max(100).min(0)
 
         })
-    ]
+    ],
 })

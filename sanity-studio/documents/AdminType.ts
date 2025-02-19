@@ -1,4 +1,4 @@
-import {defineField, defineType} from 'sanity'
+import {defineArrayMember, defineField, defineType} from 'sanity'
 
 const AdminType = defineType({
   name: 'admin',
@@ -62,7 +62,13 @@ const AdminType = defineType({
       name: 'productReferenceAfterListing',
       title: 'Product Reference',
       type: 'array',
-      of: [{type: 'reference', to: [{type: 'productType'}]}],
+      of: [defineArrayMember({type: 'reference', to: [{type: 'product'}],options:{
+        embeddingsIndex: {
+            indexName: 'productIndex', 
+            maxResults: 10, 
+            searchMode: 'embeddings'
+          }
+    }})],
     }),
   ],
 })
