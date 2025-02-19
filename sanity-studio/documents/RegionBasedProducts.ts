@@ -14,7 +14,7 @@ export const RegionToProducts = defineType({
             name: 'productList',
             title: 'Product List',
             type: 'array',
-            of: [defineArrayMember({ name: 'productType', type: 'productType' })]
+            of: [defineArrayMember({ name: 'product', type: 'reference',to:{type:'product'} })]
         })
     ]
 })
