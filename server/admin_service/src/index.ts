@@ -49,7 +49,7 @@ if (cluster.isPrimary) {
 
       worker.on('message', (logLevel:{value:string;status:number}) => {
         console.log("<create Admin worker> : ",logLevel); 
-          res.status(logLevel.status).json(logLevel.value);
+          res.status(logLevel.status).send(logLevel.value);
       })
 
       //respinning worker on failure
@@ -58,10 +58,10 @@ if (cluster.isPrimary) {
         console.log("<Restarting-another-createAdmin-Worker>");
 
         worker = new Worker('./dist/CreateAdmin.js', NotClonedObject);
-        
+
         worker.on('message', (logLevel:{value:string;status:number}) => {
           console.log("<create Admin worker> : ",logLevel); 
-            res.status(logLevel.status).json(logLevel.value);
+            res.status(logLevel.status).send(logLevel.value);
         })
       })
     },
