@@ -30,7 +30,7 @@ export const ProductType = defineType({
             type: 'string',
             description: 'Select Type of UID',
             options: {
-                list: ['EAC', 'UPC', 'ISBN', 'ASIN', 'GTIN', 'OTHERS'],
+                list: ['EAN', 'UPC', 'ISBN', 'ASIN', 'GTIN', 'OTHERS'],
                 layout: 'radio'
             }
         }),
@@ -80,13 +80,6 @@ export const ProductType = defineType({
             options: {
                 layout: 'tags'
             }
-        }),
-        defineField({
-            name: 'discount',
-            title: 'Discount',
-            type: 'number',
-            validation: rule => rule.max(100).min(0)
-
         })
     ],
 })

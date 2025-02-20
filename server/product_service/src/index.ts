@@ -31,18 +31,39 @@ if (cluster.isPrimary) {
   app.get('/', (req: Request, res: Response) => {
     res.end('pinged!')
   })
-
   app.get(
-    '/fetch-product/:productId',
-    (req: Request<{ productId: string }>, res: Response) => {
+    '/:adminId/fetch-products',
+    (req: Request<{ adminId:string }>, res: Response) => {
+      console.log(req.params.adminId)
+      const NotClonedObject = {
+        workerData: {
+          adminId:req.params.adminId
+        },
+      }
+      const worker = new Worker('./dist/fetchAllProductsOfCurrentAdmin.js', NotClonedObject)
+      worker.on('message', (value: ProductType[]) => {
+        console.log(value)
+        res.status(200).json(value)
+      })
+      worker.on('error', (err: Error) => {
+        res.status(503).json('Service is down!')
+      })
+    },
+  )
+  
+  app.get(
+    '/:adminId/fetch-product/:productId',
+    (req: Request<{ productId: string,adminId:string }>, res: Response) => {
       console.log(req.params.productId)
       const NotClonedObject = {
         workerData: {
-          value: req.params.productId,
+          productId: req.params.productId,
+          adminId:req.params.adminId
         },
       }
-      const worker = new Worker('./dist/fetchUserData.js', NotClonedObject)
-      worker.on('message', (value: boolean) => {
+      const worker = new Worker('./dist/fetchProductData.js', NotClonedObject)
+      worker.on('message', (value: ProductType[]) => {
+        console.log("Product Data of id "+req.params.productId+" : "+value)
         res.status(200).send(value)
       })
       worker.on('error', (err: Error) => {
@@ -63,12 +84,12 @@ if (cluster.isPrimary) {
     // }
     const worker = new Worker('./dist/ProductDetailsHandling.js')
     worker.on('message', data => {})
-    worker.postMessage(req.body, [req.body])
+    worker.postMessage(req.body)
     res.end('ok')
   })
 
   //patch to update same product
-  app.patch('/add-product', async (req: Request, res: Response) => {
+  app.patch('/update-product', async (req: Request, res: Response) => {
     const { adminId, admin_document_id, plan } = req.body
     const worker = new Worker('./dist/updateAdminSubsTransactionToDB.js', {
       workerData: { adminId, plan },

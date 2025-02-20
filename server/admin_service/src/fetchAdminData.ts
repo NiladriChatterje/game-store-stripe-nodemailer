@@ -10,9 +10,9 @@ async function getAdminData({adminId}:{adminId:string}) {
         `*[_type=='admin' && adminId=='${adminId}']`,
       );
   
-      parentPort?.postMessage(result);
+      parentPort?.postMessage({status:200,result:result});
 }
 
 getAdminData(workerData).catch(err=>{
-  parentPort?.postMessage([])
+  parentPort?.postMessage({status:500,result:[]})
 })

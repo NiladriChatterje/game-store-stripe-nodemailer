@@ -4,6 +4,7 @@ import express, { Express, NextFunction, Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { availableParallelism } from 'os'
+import { AdminFieldsType } from './delcarations/AdminFieldType'
 
 
 dotenv.config()
@@ -37,23 +38,31 @@ if (cluster.isPrimary) {
 
   app.post(
     '/create-admin',
-    (req: Request, res: Response) => {
+    (req: Request<{},AdminFieldsType>, res: Response) => {
       console.log(req.body);
       const NotClonedObject = {
         workerData: {
           value:req.body,
-        },
-        transferList:[req.body]
+        }
       }
-      const worker = new Worker('./dist/CreateAdmin.js', NotClonedObject);
+      let worker = new Worker('./dist/CreateAdmin.js', NotClonedObject);
 
-      worker.on('message', (value) => {
-        console.log(value)
-        res.status(200).json(value)
+      worker.on('message', (logLevel:{value:string;status:number}) => {
+        console.log("<create Admin worker> : ",logLevel); 
+          res.status(logLevel.status).json(logLevel.value);
       })
 
-      worker.on('error', (value) => {
-        res.status(200).json(value)
+      //respinning worker on failure
+      worker.on('error', (_error:Error) => {
+        console.log("<createAdmin-Worker-error>");
+        console.log("<Restarting-another-createAdmin-Worker>");
+
+        worker = new Worker('./dist/CreateAdmin.js', NotClonedObject);
+        
+        worker.on('message', (logLevel:{value:string;status:number}) => {
+          console.log("<create Admin worker> : ",logLevel); 
+            res.status(logLevel.status).json(logLevel.value);
+        })
       })
     },
   );
@@ -71,7 +80,7 @@ if (cluster.isPrimary) {
       const worker = new Worker('./dist/fetchAdminData.js', NotClonedObject)
       worker.on('message', (value) => {
         console.log(value)
-        res.status(200).send(value)
+        res.status(value.status).json(value.result)
       })
 
       worker.on('error', (value) => {
@@ -112,7 +121,6 @@ if (cluster.isPrimary) {
       })
 
       worker.on('message', data => {
-     
         res.status(200).send(data)
       })
     },
