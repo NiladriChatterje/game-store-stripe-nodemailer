@@ -23,12 +23,12 @@ async function createAdmin(value:AdminFieldsType){
     console.log("<createAmin-Worker-received-data-from-parent> : ",value)
     let producer;
     try{
-        producer = kafka.producer();
+        producer = kafka.producer({allowAutoTopicCreation:false});
+        
         await producer.connect()
 
-        const recordMetaData : RecordMetadata[]= await producer.send({
-            topic:'create-admin-record',
-            messages:[{value:JSON.stringify(value)}]
+        const recordMetaData : RecordMetadata[]= await producer.sendBatch({
+            topicMessages:[{topic:'create-admin-record',messages:[{value:JSON.stringify(value)}]}]
         });
         
         producer.on('producer.network.request_timeout',ev=>{

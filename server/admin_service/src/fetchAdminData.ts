@@ -13,6 +13,6 @@ async function getAdminData({adminId}:{adminId:string}) {
       parentPort?.postMessage({status:200,result:result});
 }
 
-getAdminData(workerData).catch(err=>{
+getAdminData(workerData).catch(_err=>{
   parentPort?.postMessage({status:500,result:[]})
 })
