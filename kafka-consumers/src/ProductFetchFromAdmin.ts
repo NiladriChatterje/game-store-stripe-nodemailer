@@ -1,7 +1,8 @@
 import cluster from 'node:cluster';
-import { EachMessagePayload, Kafka, logLevel, } from 'kafkajs';
+import { EachMessagePayload, Kafka, logLevel } from 'kafkajs';
 import { availableParallelism } from 'node:os';
 import { createClient, SanityClient } from '@sanity/client';
+import {Server} from 'socket.io';
 
 const sanityConfig = {
     projectId: process.env.SANITY_PROJECT_ID,
@@ -26,16 +27,24 @@ if (cluster.isPrimary) {
     }
 }
 else {
-    const sanityClient: SanityClient = createClient(sanityConfig)
-    const consumer = kafka.consumer({
-        groupId: 'product-from-admin'
-    });
-
-    async function handleMessage({ topic, partition, heartbeat, pause, message }: EachMessagePayload) {
-
+    async function main(){
+        const sanityClient: SanityClient = createClient(sanityConfig)
+        const consumer = kafka.consumer({
+            groupId: 'product-from-admin',
+            
+        });
+    
+        await consumer.connect();
+        await consumer.subscribe({topic:''})
+    
+        async function handleEachMessages({ heartbeat,message,partition,topic,pause }: EachMessagePayload) {
+            
+        }
+    
+        consumer.run({
+            eachMessage: handleEachMessages
+        })
     }
 
-    consumer.run({
-        eachMessage: handleMessage
-    })
+    main();
 }

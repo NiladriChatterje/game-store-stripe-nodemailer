@@ -2,7 +2,6 @@ import { defineConfig } from 'sanity'
 import { structureTool } from 'sanity/structure'
 import { visionTool } from '@sanity/vision'
 import { schemaTypes } from './schemaTypes';
-import {embeddingsIndexReferenceInput} from '@sanity/embeddings-index-ui'
 
 export default defineConfig({
   name: 'default',
@@ -11,7 +10,7 @@ export default defineConfig({
   projectId: 's95gzq5b',
   dataset: 'production',
 
-  plugins: [structureTool(), visionTool(),embeddingsIndexReferenceInput()],
+  plugins: [structureTool(), visionTool()],
 
   schema: {
     types: schemaTypes

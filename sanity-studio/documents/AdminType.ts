@@ -62,13 +62,7 @@ const AdminType = defineType({
       name: 'productReferenceAfterListing',
       title: 'Product Reference',
       type: 'array',
-      of: [defineArrayMember({type: 'reference', to: [{type: 'product'}],options:{
-        embeddingsIndex: {
-            indexName: 'productIndex', 
-            maxResults: 10, 
-            searchMode: 'embeddings'
-          }
-    }})],
+      of: [defineArrayMember({type: 'reference', to: [{type: 'product'}]})],
     }),
   ],
 })
