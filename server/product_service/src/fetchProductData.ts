@@ -4,7 +4,7 @@ import { workerData, parentPort } from 'node:worker_threads'
 
 async function getProduct({productId,adminId}:{productId:string;adminId:string}) {
 const sanityClient :SanityClient = createClient(sanityConfig);
-return sanityClient.fetch(`*[_type=='product' && productId=='${productId}' && seller[].admin.adminId=='${adminId}']`); 
+return sanityClient.fetch(`*[_type=='product' && productId=='${productId}' && seller[].admin._id=='${adminId}']`); 
 }
 
 getProduct(workerData).then(result=>{

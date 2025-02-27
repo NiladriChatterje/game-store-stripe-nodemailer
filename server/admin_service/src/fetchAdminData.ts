@@ -4,10 +4,10 @@ import { workerData, parentPort } from 'node:worker_threads'
 
 
 
-async function getAdminData({adminId}:{adminId:string}) {
+async function getAdminData({_id}:{_id:string}) {
   const sanityClient: SanityClient = createClient(sanityConfig);
     const result = await sanityClient?.fetch(
-        `*[_type=='admin' && adminId=='${adminId}']`,
+        `*[_type=='admin' && _id=='${_id}']`,
       );
   
       parentPort?.postMessage({status:200,result:result});

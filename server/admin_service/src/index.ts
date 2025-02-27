@@ -69,12 +69,12 @@ if (cluster.isPrimary) {
 
 
   app.get(
-    '/fetch-admin-data/:adminId',
-    (req: Request<{ adminId: string }>, res: Response) => {
-      console.log(req.params.adminId)
+    '/fetch-admin-data/:_id',
+    (req: Request<{ _id: string }>, res: Response) => {
+      console.log(req.params._id)
       const NotClonedObject = {
         workerData: {
-          adminId: req.params.adminId,
+          adminId: req.params._id,
         }
       }
       const worker = new Worker('./dist/fetchAdminData.js', NotClonedObject)
