@@ -32,12 +32,12 @@ if (cluster.isPrimary) {
     res.end('pinged!')
   })
   app.get(
-    '/:adminId/fetch-products',
-    (req: Request<{ adminId:string }>, res: Response) => {
-      console.log(req.params.adminId)
+    '/:_id/fetch-products',
+    (req: Request<{ _id:string }>, res: Response) => {
+      console.log(req.params._id)
       const NotClonedObject = {
         workerData: {
-          adminId:req.params.adminId
+          adminId:req.params._id
         },
       }
       const worker = new Worker('./dist/fetchAllProductsOfCurrentAdmin.js', NotClonedObject)

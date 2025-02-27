@@ -112,11 +112,11 @@ if (cluster.isPrimary) {
   )
 
   app.get(
-    '/:adminId/product-list',
-    (req: Request<{ adminId: string }>, res: Response) => {
-      const worker = new Worker('./dist/AdminProducts.js', {
+    '/:_id/product-list',
+    (req: Request<{ _id: string }>, res: Response) => {
+      const worker = new Worker('./dist/FetchAdminProducts.js', {
         workerData: {
-          userId: req.params.adminId,
+          userId: req.params._id,
         },
       })
 
