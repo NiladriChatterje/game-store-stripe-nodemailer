@@ -11,12 +11,6 @@ export const ShipperType = defineField({
             validation: rule => rule.required()
         }),
         defineField({
-            name: 'shipperId',
-            title: 'Shipper Id',
-            type: 'string',
-            validation: rule => rule.required()
-        }),
-        defineField({
             name: 'phone',
             title: 'Phone',
             type: 'number',

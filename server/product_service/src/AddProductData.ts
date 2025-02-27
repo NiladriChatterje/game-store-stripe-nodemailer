@@ -16,7 +16,7 @@ async function addProductData(workerData: ProductType) {
     const producer = kafka.producer()
     producer.connect()
     producer.send({
-      topic: '',
+      topic: 'product-topic',
       messages: [{ key: '', value: '' }],
     })
   } catch (e: Error | any) {

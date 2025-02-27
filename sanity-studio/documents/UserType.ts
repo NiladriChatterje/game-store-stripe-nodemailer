@@ -11,12 +11,6 @@ export const UserType = defineField({
             validation: rule => rule.required()
         }),
         defineField({
-            name: 'userId',
-            title: 'User Id',
-            type: 'string',
-            validation: rule => rule.required()
-        }),
-        defineField({
             name: 'phone',
             title: 'Phone',
             type: 'number',

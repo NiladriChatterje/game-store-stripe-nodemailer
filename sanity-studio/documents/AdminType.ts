@@ -12,12 +12,6 @@ const AdminType = defineType({
       validation: (rule) => rule.required(),
     }),
     defineField({
-      name: 'adminId',
-      title: 'Admin ID',
-      type: 'string',
-      validation: (rule) => rule.required(),
-    }),
-    defineField({
       name: 'gstin',
       title: 'GSTIN',
       type: 'string',
