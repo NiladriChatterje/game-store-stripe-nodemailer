@@ -3,7 +3,7 @@ import { EachMessagePayload, Kafka, logLevel } from 'kafkajs';
 import { availableParallelism } from 'node:os';
 import { createClient, SanityClient } from '@sanity/client';
 import {Server} from 'socket.io';
-import { AdminFieldsType } from '@declaration/index';
+import { ProductType } from '@declaration/productType';
 
 const sanityConfig = {
     projectId: process.env.SANITY_PROJECT_ID,
@@ -42,12 +42,13 @@ else {
     
         async function handleEachMessages({ heartbeat,message,partition,topic,pause }: EachMessagePayload) {
             console.log("<arrayBufferLike> : ",message.value);
-            const productPayload : AdminFieldsType = JSON.parse(message.value.toString());
+            const productPayload : ProductType = JSON.parse(message.value.toString());
             const resume = pause();
            //pause - resume for db operation & embedding creation
            try{
-               const result = await sanityClient.create({_type:'product'});
-               const success =  sanityClient.patch(productPayload.document_id).set({});
+               const result = await sanityClient.create({_type:'product',...productPayload});
+               productPayload._id = result._id;
+               const success =  sanityClient.patch(productPayload._id).append('productReferenceAfterListing',[productPayload]).commit();
                
            }catch(error:Error|any){
 

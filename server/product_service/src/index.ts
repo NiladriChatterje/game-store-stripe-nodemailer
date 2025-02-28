@@ -73,7 +73,7 @@ if (cluster.isPrimary) {
   )
 
   //post to create the product
-  app.post('/add-product', async (req: Request<{}, {}>, res: Response) => {
+  app.post('/add-product', async (req: Request<{}, {},ProductType>, res: Response) => {
     // let h = 0
     // for (let i = 0; i < bufferArr.length; i++) {
     //     writeFile('./dist/uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
@@ -82,9 +82,12 @@ if (cluster.isPrimary) {
     //     });
     //     h++
     // }
-    const worker = new Worker('./dist/ProductDetailsHandling.js')
+    
+    const worker = new Worker('./dist/AddProductData.js',{
+      workerData:req.body
+    });
+
     worker.on('message', data => {})
-    worker.postMessage(req.body)
     res.end('ok')
   })
 
