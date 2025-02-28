@@ -10,7 +10,9 @@
         "baseUrl": ".",
         "paths": {
             "@/*":["src/*"],
-            "@declaration/*":["./declaration/*"]
+            "@declaration/*":["./declaration/*"],
+            "@utils":["src/utils/index.ts"],
+            "@utils/*":["src/utils/*"]
         },
         "plugins": [ { "transform": "typescript-transform-paths" }]
     }

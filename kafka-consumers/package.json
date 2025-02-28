@@ -11,9 +11,11 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@langchain/community": "^0.3.33",
     "@sanity/client": "^6.27.1",
     "dotenv": "^16.4.7",
     "kafkajs": "^2.2.4",
+    "langchain": "^0.3.19",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
