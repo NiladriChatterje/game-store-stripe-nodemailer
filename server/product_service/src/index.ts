@@ -5,6 +5,8 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import { availableParallelism } from 'os'
 import { ProductType } from '@declaration/index.js'
+import { sanityConfig } from '@utils/index.js'
+import { createClient } from '@sanity/client'
 dotenv.config()
 
 if (cluster.isPrimary) {
@@ -18,7 +20,8 @@ if (cluster.isPrimary) {
     })
   }
 } else {
-  const app: Express = express()
+  const app: Express = express();
+  const sanityClient = createClient(sanityConfig);
 
   app.use(cors())
   app.use(express.json({ limit: '25mb' }))
@@ -31,6 +34,11 @@ if (cluster.isPrimary) {
   app.get('/', (req: Request, res: Response) => {
     res.end('pinged!')
   })
+
+  app.get('/fetch-all-products', async (req: Request, res: Response) => {
+    res.end(await sanityClient.fetch(`*[_type=="product"]`))
+  })
+
   app.get(
     '/:_id/fetch-products',
     (req: Request<{ _id:string }>, res: Response) => {
@@ -74,21 +82,13 @@ if (cluster.isPrimary) {
 
   //post to create the product
   app.post('/add-product', async (req: Request<{}, {},ProductType>, res: Response) => {
-    // let h = 0
-    // for (let i = 0; i < bufferArr.length; i++) {
-    //     writeFile('./dist/uploads/' + h + `.${imagesBase64[i].extension}`, bufferArr[i], 'binary', (err) => {
-    //         if (err)
-    //             console.log(err);
-    //     });
-    //     h++
-    // }
-    
+  
     const worker = new Worker('./dist/AddProductData.js',{
       workerData:req.body
     });
 
-    worker.on('message', data => {})
-    res.end('ok')
+    worker.on('message', data => {res.status(data.status).send(data.value)})
+
   })
 
   //patch to update same product

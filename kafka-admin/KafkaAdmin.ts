@@ -15,39 +15,44 @@ async function admin(){
     await admin.connect();
     try{
         //product topic
-        const result0:boolean = await admin.createTopics({
+        admin.createTopics({
             topics:[{topic:"product-topic",numPartitions:5,replicationFactor:3},
             ],
             waitForLeaders:true,
             timeout:60000
+        }).then((result:boolean)=>{
+            if(!result)
+                throw new Error("<product-topic-creation-failed>");
+
         });
 
-        if(!result0)
-            throw new Error("<product-topic-creation-failed>");
 
         //admin-create-topic
-        const result1:boolean = await admin.createTopics({
+       admin.createTopics({
             topics:[{topic:"admin-create-topic",numPartitions:5,replicationFactor:3},
             ],
             waitForLeaders:true,
             timeout:60000
+        }).then((result:boolean)=>{
+            if(!result)
+                throw new Error("<admin-topic-creation-failed>");
+
         });
 
-        if(!result1)
-            throw new Error("<admin-topic-creation-failed>");
-
         //admin-update-topic
-        const result2:boolean = await admin.createTopics({
+        admin.createTopics({
             topics:[{topic:"admin-update-topic",numPartitions:5,replicationFactor:3},
             ],
             waitForLeaders:true,
             timeout:60000
+        }).then((result:boolean)=>{
+            if(!result)
+                throw new Error("<product-topic-creation-failed>");
         });
 
-        if(!result2)
-            throw new Error("<product-topic-creation-failed>");
+
     }catch(err:Error|any){
-        
+        console.error(err?.message)
     }
     await admin.disconnect()
 }
