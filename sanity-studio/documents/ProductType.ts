@@ -16,10 +16,7 @@ export const ProductType = defineType({
             title: 'Image',
             type: 'array',
             of: [{
-                type: 'image',
-                options: {
-                    hotspot: true
-                }
+                type: 'string',
             }],
             description: 'Product Images',
 
