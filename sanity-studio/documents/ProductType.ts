@@ -12,11 +12,25 @@ export const ProductType = defineType({
             description: 'Name of the Product',
         }),
         defineField({
-            name: 'image',
+            name: 'imagesBase64',
             title: 'Image',
             type: 'array',
             of: [{
-                type: 'string',
+                type: 'object',
+                fields:[
+                    defineField({
+                        name:'size',
+                        type:'number'
+                    }),
+                    defineField({
+                        name:'base64',
+                        type:'string',
+                    }),
+                    defineField({
+                        name:'extension',
+                        type:'string'
+                    })
+                ]
             }],
             description: 'Product Images',
 
