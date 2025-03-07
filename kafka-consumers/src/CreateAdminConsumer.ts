@@ -18,7 +18,7 @@ async function createAdmin(){
     
     async function handleMessage({heartbeat,pause,message,topic,partition}:EachMessagePayload){
         const user:AdminFieldsType = JSON.parse(message.value.toString());
-        await sanityClient?.createOrReplace({
+        await sanityClient?.createIfNotExists({
             _type:'admin',
             _id:user._id,
             username: user?.username,
