@@ -18,7 +18,7 @@ async function createAdmin(){
     
     async function handleMessage({heartbeat,pause,message,topic,partition}:EachMessagePayload){
         const user:AdminFieldsType = JSON.parse(message.value.toString());
-        await sanityClient?.createIfNotExists({
+        sanityClient?.createIfNotExists({
             _type:'admin',
             _id:user._id,
             username: user?.username,
@@ -33,7 +33,7 @@ async function createAdmin(){
               state: user.address.state,
               country: user.address.country,
             },
-        });
+        }).then(onfulfilled=>console.log(`<< data ${onfulfilled.username} written >>`)).catch(err=>console.log(err));
        
     }
 
@@ -42,6 +42,8 @@ async function createAdmin(){
     })
     
 }
+
+createAdmin();
 
 /*Structure sent while producing */
 // sanityClient?.create({

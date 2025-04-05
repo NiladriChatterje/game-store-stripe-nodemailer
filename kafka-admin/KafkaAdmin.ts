@@ -20,12 +20,12 @@ async function admin(){
             topics:[{topic:"product-topic",numPartitions:5,replicationFactor:3},
             ],
             waitForLeaders:true,
-            timeout:60000
+            timeout:120000
         }).then((result:boolean)=>{
             if(!result)
                 throw new Error("<product-topic-creation-failed>");
 
-        });
+        }).catch(err=>console.log("<failed! Might be created earlier>"));
 
 
         //admin-create-topic
@@ -38,7 +38,7 @@ async function admin(){
             if(!result)
                 throw new Error("<admin-topic-creation-failed>");
 
-        });
+        }).catch(err=>console.log("<failed! Might be created earlier>"));
 
         //admin-update-topic
         admin.createTopics({
@@ -49,15 +49,14 @@ async function admin(){
         }).then((result:boolean)=>{
             if(!result)
                 throw new Error("<product-topic-creation-failed>");
-        });
+        }).catch(err=>console.log("<failed! Might be created earlier>"));
 
 
     }catch(err:Error|any){
         console.error(err?.message)
     }finally{
-        console.log(await admin.listTopics())  
+        await admin.disconnect()
     }
-    await admin.disconnect()
 }
 
 admin();
