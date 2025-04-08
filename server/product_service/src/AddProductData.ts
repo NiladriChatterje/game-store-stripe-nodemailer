@@ -9,7 +9,7 @@ async function addProductData(workerData: ProductType) {
   try {
     const kafka: Kafka = new Kafka({
       clientId: "xv store",
-      brokers: ["localhost:9092", "localhost:9093","localhost:9094"],
+      brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
       ssl: true,
     });
 

@@ -10,7 +10,6 @@ services:
       ZOOKEEPER_SERVER_ID: 1
       ZOOKEEPER_SERVERS: zoo1:2888:3888
 
-
   kafka1:
     image: confluentinc/cp-kafka:7.3.2
     hostname: kafka1
@@ -48,7 +47,6 @@ services:
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
     depends_on:
       - zoo1
-
 
   kafka3:
     image: confluentinc/cp-kafka:7.3.2

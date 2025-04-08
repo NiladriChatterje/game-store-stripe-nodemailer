@@ -39,6 +39,7 @@ if (cluster.isPrimary) {
     res.end(await sanityClient.fetch(`*[_type=="product"]`));
   });
 
+  //fetch product inventory for current admin
   app.get(
     "/:_id/fetch-products",
     (req: Request<{ _id: string }>, res: Response) => {
@@ -62,12 +63,18 @@ if (cluster.isPrimary) {
     }
   );
 
+  //fetch particular product info for edit
   app.get(
     "/:adminId/fetch-product/:productId",
-    async (req: Request<{ productId: string; adminId: string }>, res: Response) => {
-      const result = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId]`,{adminId:req.params.adminId});
-      if(result.length===0)
-         res.status(403).send("<Not a valid admin>");
+    async (
+      req: Request<{ productId: string; adminId: string }>,
+      res: Response
+    ) => {
+      const result = await sanityClient.fetch(
+        `*[_type=="admin" && _id==$adminId]`,
+        { adminId: req.params.adminId }
+      );
+      if (result.length === 0) res.status(403).send("<Not a valid admin>");
       console.log(req.params.productId);
       const NotClonedObject = {
         workerData: {
@@ -76,15 +83,16 @@ if (cluster.isPrimary) {
         },
       };
       const worker = new Worker("./dist/fetchProductData.js", NotClonedObject);
-      
+
       worker.on("message", (value: ProductType[]) => {
         console.log(
-          "Product Data of id " + req.params.productId + " : " + value
+          "Product Data of id " + req.params.productId + " : ",
+          value
         );
         res.status(200).send(value);
       });
       worker.on("error", (err: Error) => {
-        res.status(503).send("Service is down!");
+        res.status(502).send("Service is down!");
       });
     }
   );
@@ -106,13 +114,6 @@ if (cluster.isPrimary) {
   //patch to update same product
   app.patch("/update-product", async (req: Request, res: Response) => {
     const { adminId, plan } = req.body;
-    const worker = new Worker("./dist/updateAdminSubsTransactionToDB.js", {
-      workerData: { adminId, plan },
-      transferList: [adminId, plan],
-    });
-    worker.on("message", (data) => {
-      res.json(data);
-    });
   });
 
   app.listen(process.env.PORT, () =>
