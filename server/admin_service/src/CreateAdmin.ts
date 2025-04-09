@@ -5,7 +5,7 @@ import process from "process";
 
 const kafka = new Kafka({
   clientId: "xv store",
-  brokers: ["localhost:9092"],
+  brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
   retry: {
     retries: 2,
   },
@@ -36,7 +36,7 @@ async function createAdmin(value: AdminFieldsType) {
     const recordMetaData: RecordMetadata[] = await producer.sendBatch({
       topicMessages: [
         {
-          topic: "create-admin-record",
+          topic: "admin-create-topic",
           messages: [{ value: JSON.stringify(value) }],
         },
       ],

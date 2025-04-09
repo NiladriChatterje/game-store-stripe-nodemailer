@@ -23,6 +23,7 @@ async function createAdmin() {
     partition,
   }: EachMessagePayload) {
     const user: AdminFieldsType = JSON.parse(message.value.toString());
+    console.log(user);
     if (user)
       sanityClient
         ?.createIfNotExists({

@@ -64,6 +64,11 @@ async function admin() {
         if (!result) throw new Error("<product-topic-creation-failed>");
       })
       .catch((err) => console.log("<failed! Might be created earlier>"));
+
+    admin
+      .deleteTopics({ topics: ["create-admin-record"] })
+      .then((topic) => topic + " successfully deleted")
+      .catch((err) => "<No such Topic to delete>");
   } catch (err: Error | any) {
     console.error(err?.message);
   } finally {
