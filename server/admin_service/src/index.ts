@@ -70,7 +70,7 @@ if (cluster.isPrimary) {
       console.log(req.params._id);
       const NotClonedObject = {
         workerData: {
-          adminId: req.params._id,
+          _id: req.params._id,
         },
       };
       const worker = new Worker("./dist/fetchAdminData.js", NotClonedObject);

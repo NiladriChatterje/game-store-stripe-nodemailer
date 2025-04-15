@@ -11,7 +11,7 @@ async function createAdmin() {
 
   const consumer = kafka.consumer({ groupId: "admin-record" });
   await consumer.connect();
-  await consumer.subscribe({ topic: "create-admin-record" });
+  await consumer.subscribe({ topic: "admin-create-topic" });
 
   const sanityClient: SanityClient = createClient(sanityConfig);
 
