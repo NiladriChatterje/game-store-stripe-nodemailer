@@ -79,27 +79,18 @@ if (cluster.isPrimary) {
         res.status(value.status).json(value.result);
       });
 
-      worker.on("error", (value) => {
-        res.status(200).send(value);
+      worker.on("error", (err) => {
+        res.status(503).send(err.message);
       });
     }
   );
 
   app.patch(
     "/update-info",
-    (
-      req: Request<
-        {},
-        {},
-        {
-          userId: string;
-        }
-      >,
-      res: Response
-    ) => {
+    (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
       const worker = new Worker("./dist/UpdateInfo.js", {
         workerData: {
-          userId: req.body.userId,
+          adminPayload: req.body,
         },
       });
 
