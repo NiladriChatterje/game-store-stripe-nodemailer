@@ -9,7 +9,10 @@ async function createAdmin() {
     brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
   });
 
-  const consumer = kafka.consumer({ groupId: "admin-record" });
+  const consumer = kafka.consumer({
+    groupId: "admin-record",
+    retry: { retries: 6 },
+  });
   await consumer.connect();
   await consumer.subscribe({ topic: "admin-create-topic" });
 
@@ -18,9 +21,9 @@ async function createAdmin() {
   async function handleMessage({
     heartbeat,
     pause,
-    message,
     topic,
     partition,
+    message,
   }: EachMessagePayload) {
     const user: AdminFieldsType = JSON.parse(message.value.toString());
     console.log(user);
@@ -42,13 +45,17 @@ async function createAdmin() {
             country: user.address.country,
           },
         })
-        .then((onfulfilled) =>
-          console.log(`<< data ${onfulfilled.username} written >>`)
-        )
+        .then(async (onfulfilled) => {
+          console.log(`<< data ${onfulfilled.username} written >>`);
+          await consumer.commitOffsets([
+            { topic, offset: message.offset, partition },
+          ]);
+        })
         .catch((err) => console.log(err));
   }
 
   consumer.run({
+    autoCommit: false,
     eachMessage: handleMessage,
   });
 }
