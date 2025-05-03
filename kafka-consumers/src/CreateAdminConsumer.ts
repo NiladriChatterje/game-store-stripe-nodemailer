@@ -47,9 +47,11 @@ async function createAdmin() {
         })
         .then(async (onfulfilled) => {
           console.log(`<< data ${onfulfilled.username} written >>`);
-          await consumer.commitOffsets([
-            { topic, offset: message.offset, partition },
-          ]);
+          consumer
+            .commitOffsets([{ topic, offset: message.offset, partition }])
+            .then(async () => {
+              await heartbeat(); // to let the broker know that the consumer in the group is still alive
+            });
         })
         .catch((err) => console.log(err));
   }

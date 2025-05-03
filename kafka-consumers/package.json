@@ -11,8 +11,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@langchain/community": "^0.3.39",
-    "@langchain/core": "^0.3.43",
+    "@langchain/community": "^0.3.42",
+    "@langchain/core": "^0.3.51",
+    "@langchain/ollama": "^0.2.0",
     "@sanity/client": "^6.27.1",
     "dotenv": "^16.4.7",
     "kafkajs": "^2.2.4",

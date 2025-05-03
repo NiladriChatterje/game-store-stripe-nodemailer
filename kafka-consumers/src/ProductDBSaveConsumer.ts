@@ -20,29 +20,27 @@ if (cluster.isPrimary) {
     });
   }
 } else {
-  const embeddingStore: number[] = [];
   async function main() {
     const sanityClient: SanityClient = createClient({
       ...sanityConfig,
       perspective: "published",
     });
     const consumer = kafka.consumer({
-      groupId: "product-from-admin",
+      groupId: "product-db-save",
     });
 
     await consumer.connect();
-    await consumer.subscribe({ topic: "product-topic" });
+    await consumer.subscribe({ topic: "product-db-save-topic" });
 
     async function handleEachMessages({
       heartbeat,
       message,
       partition,
       topic,
-      pause,
     }: EachMessagePayload) {
       console.log("<arrayBufferLike> : ", message.value);
       //pause - resume for db operation & embedding creation
-      const resume = pause();
+
       try {
         const productPayload: ProductType = JSON.parse(
           message.value.toString()
@@ -52,18 +50,21 @@ if (cluster.isPrimary) {
           ...productPayload,
         });
         productPayload._id = result._id;
-        const success = await sanityClient
+        await sanityClient
           .patch(productPayload._id)
           .append("productReferenceAfterListing", [productPayload])
-          .commit();
-
-        resume();
+          .commit()
+          .then(() => {
+            consumer.commitOffsets([
+              { topic, partition, offset: message.offset },
+            ]);
+          });
       } catch (error: Error | any) {}
     }
 
     consumer.run({
       eachMessage: handleEachMessages,
-      eachBatchAutoResolve: false,
+      autoCommit: false,
     });
   }
 

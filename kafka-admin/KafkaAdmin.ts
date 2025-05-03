@@ -15,11 +15,33 @@ async function admin() {
   try {
     console.log(await admin.listTopics());
 
-    //product topic
+    //product topic for DB
     admin
       .createTopics({
         topics: [
-          { topic: "product-topic", numPartitions: 5, replicationFactor: 3 },
+          {
+            topic: "product-db-save-topic",
+            numPartitions: 5,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 120000,
+      })
+      .then((result: boolean) => {
+        if (!result) throw new Error("<product-topic-creation-failed>");
+      })
+      .catch((err) => console.log("<failed! Might be created earlier>"));
+
+    //product topic for Embeddings
+    admin
+      .createTopics({
+        topics: [
+          {
+            topic: "product-embedding-topic",
+            numPartitions: 5,
+            replicationFactor: 3,
+          },
         ],
         waitForLeaders: true,
         timeout: 120000,
