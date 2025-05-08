@@ -59,10 +59,11 @@ if (cluster.isPrimary) {
               { topic, partition, offset: message.offset },
             ]);
           });
-      } catch (error: Error | any) {}
+      } catch (error: Error | any) { }
     }
 
     consumer.run({
+      partitionsConsumedConcurrently: 5,
       eachMessage: handleEachMessages,
       autoCommit: false,
     });
