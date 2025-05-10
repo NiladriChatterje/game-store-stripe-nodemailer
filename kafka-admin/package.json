@@ -2,9 +2,9 @@
   "name": "kafka-admin",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "./KafkaAdmin.ts",
   "scripts": {
-    "dev": "tsx KafkaAdmin.ts"
+    "dev": "npx tsx KafkaAdmin.ts"
   },
   "keywords": [],
   "author": "",

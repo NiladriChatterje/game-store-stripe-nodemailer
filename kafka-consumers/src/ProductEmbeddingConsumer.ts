@@ -4,6 +4,10 @@ import { availableParallelism } from "node:os";
 import { ProductType } from "@declaration/productType";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { Ollama, OllamaEmbeddings } from "@langchain/ollama";
+import { createClient as RedisClient } from "redis";
+import { createClient as SanityClient } from "@sanity/client";
+import { sanityConfig } from "./utils";
+
 
 const kafka: Kafka = new Kafka({
   clientId: "xvstore",
@@ -20,15 +24,21 @@ if (cluster.isPrimary) {
     });
   }
 } else {
-  const embeddingStore: number[] = [];
+  const embeddingModel = new OllamaEmbeddings({
+    model: 'nomic-embed',
+    baseUrl: 'http://localhost:11434'
+  });
   const model = new Ollama({
     model: "mistral-ai",
     baseUrl: "http://localhost:11434",
   });
 
+  const sanityClient = SanityClient(sanityConfig);
+
+  const redisClient = RedisClient();
   async function main() {
     const consumer = kafka.consumer({
-      groupId: "product-embedding-admin",
+      groupId: "product-embedding",
     });
 
     await consumer.connect();
@@ -44,13 +54,39 @@ if (cluster.isPrimary) {
       //embedding creation
 
       try {
-        const productPayload: ProductType = JSON.parse(
-          message.value.toString()
-        );
-      } catch (error: Error | any) {}
+        const productPayload: ProductType = JSON.parse(message.value.toString());
+        const splitter = new RecursiveCharacterTextSplitter({
+          chunkSize: 1024,
+        });
+
+        // const document = new Document({
+        //   pageContent: productPayload.productDescription + '\n' +
+        //     productPayload.keywords.map(item => item + ', '),
+        //   metadata: { source: 'products' }
+        // });
+        splitter.splitText(productPayload.productDescription + '\n' +
+          productPayload.keywords.map(item => item + ', '))
+          .then(async onfulfilled => {
+            const embeddings = await embeddingModel
+              .embedQuery(onfulfilled.join(" "));
+
+            // sanityClient?.createIfNotExists({
+            //   _id: productPayload._id,
+            //   _type: "productEmbeddings",
+            //   embeddings
+            // })
+            console.log(embeddings)
+
+          });
+
+
+      } catch (error: Error | any) {
+
+      }
     }
 
     consumer.run({
+      partitionsConsumedConcurrently: 6,
       eachMessage: handleEachMessages,
       autoCommit: false,
     });

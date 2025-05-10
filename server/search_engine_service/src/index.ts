@@ -4,7 +4,7 @@ import { availableParallelism } from "node:os";
 import cluster from "cluster";
 import { spawn } from "node:child_process";
 import { Ollama, OllamaEmbeddings } from "@langchain/ollama";
-import path from "node:path";
+import { createClient as redisClient } from "redis";
 
 dotenv.config();
 
@@ -25,27 +25,36 @@ if (cluster.isPrimary) {
   const model = new Ollama({
     model: "mistral-ai",
     baseUrl: "http://localhost:11434",
-    maxConcurrency: availableParallelism()
+    maxConcurrency: availableParallelism(),
   });
 
   const ollamaEmbeddingModel = new OllamaEmbeddings({
     model: 'nomic-embed',
     maxConcurrency: availableParallelism(),
-    baseUrl: 'http://localhost:11434/'
+    baseUrl: 'http://localhost:11434/',
   });
 
+  const redisC = redisClient();
+  redisC.on('error', err => console.log('Redis Client Error', err));
 
+  const asyncRedisConnect = async () => {
+    await redisC.connect();
+
+  }
+  asyncRedisConnect();
+  redisC.hSet("", [])
   const app: Express = express();
   app.get("/", (req: Request, res: Response) => {
-    console.log(process.pid + "alive!");
     res.end(process.pid + " alive!");
   });
 
   app.get(
     "/search",
-    (req: Request<{}, {}, {}, { s: string }>, res: Response) => {
+    async (req: Request<{}, {}, {}, { s: string }>, res: Response) => {
+      if (req.query.s !== '')
+        return;
+      const queryEmbedding: number[] = await ollamaEmbeddingModel.embedQuery(req.query.s);
 
-      res.download(path.resolve(process.cwd(), './src/abc.txt'));
     }
   );
 
