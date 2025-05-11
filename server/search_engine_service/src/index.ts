@@ -34,15 +34,15 @@ if (cluster.isPrimary) {
     baseUrl: 'http://localhost:11434/',
   });
 
-  // const redisC = redisClient();
-  // redisC.on('error', err => console.log('Redis Client Error', err));
+  const redisC = redisClient();
+  redisC.on('error', err => console.log('Redis Client Error', err));
 
-  // const asyncRedisConnect = async () => {
-  //   await redisC.connect();
+  const asyncRedisConnect = async () => {
+    await redisC.connect();
 
-  // }
-  // asyncRedisConnect();
-  // redisC.hSet("", [])
+  }
+  asyncRedisConnect();
+  redisC.set("id", JSON.stringify([4, 5]))
 
   const app: Express = express();
   app.get("/", (req: Request, res: Response) => {
@@ -57,6 +57,7 @@ if (cluster.isPrimary) {
         const queryEmbedding: number[] = await ollamaEmbeddingModel.embedQuery(req.query.s);
         console.log(queryEmbedding)
 
+        console.log(JSON.parse(await redisC.get("id") as string))
       } catch (error) {
         console.log("<<Model error>>")
       }

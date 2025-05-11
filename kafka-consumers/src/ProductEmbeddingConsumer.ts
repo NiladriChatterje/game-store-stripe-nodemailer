@@ -59,22 +59,18 @@ if (cluster.isPrimary) {
           chunkSize: 1024,
         });
 
-        // const document = new Document({
-        //   pageContent: productPayload.productDescription + '\n' +
-        //     productPayload.keywords.map(item => item + ', '),
-        //   metadata: { source: 'products' }
-        // });
+
         splitter.splitText(productPayload.productDescription + '\n' +
           productPayload.keywords.map(item => item + ', '))
           .then(async onfulfilled => {
             const embeddings = await embeddingModel
               .embedQuery(onfulfilled.join(" "));
 
-            // sanityClient?.createIfNotExists({
-            //   _id: productPayload._id,
-            //   _type: "productEmbeddings",
-            //   embeddings
-            // })
+            sanityClient?.createIfNotExists({
+              _id: productPayload._id,
+              _type: "productEmbeddings",
+              embeddings
+            })
             console.log(embeddings)
 
           });

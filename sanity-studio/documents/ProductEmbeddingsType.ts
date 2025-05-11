@@ -7,6 +7,13 @@ export const ProductEmbeddings = defineType({
         defineField({
             name: '_id',
             type: 'string'
+        }),
+        defineField({
+            name: 'embeddings',
+            type: 'array',
+            description: 'stores embedding of a product document',
+            of: [{ type: 'number' }]
+
         })
     ]
 })
