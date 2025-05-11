@@ -9,7 +9,8 @@ import { RegionToProducts } from '../documents/RegionBasedProducts';
 import { OrderType } from '../documents/OrderType';
 import { ShippingType } from '../documents/ShippingType';
 import { ShipperType } from '../documents/ShipperType';
+import { ProductEmbeddings } from '../documents/ProductEmbeddingsType';
 
-export const schemaTypes: SchemaTypeDefinition[] = [AdminType, RegionToProducts, OrderType,ShippingType,
-    ShipperType,
+export const schemaTypes: SchemaTypeDefinition[] = [AdminType, RegionToProducts, OrderType, ShippingType,
+    ShipperType, ProductEmbeddings,
     productPriceType, plansObject, ProductType, UserType, AddressObject, AdminSubsPlan]
