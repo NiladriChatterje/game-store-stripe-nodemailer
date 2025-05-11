@@ -66,3 +66,10 @@ services:
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
     depends_on:
       - zoo1
+  redis:
+    image: redis
+    hostname: redis
+    container_name: redis_server
+    ports:
+     - "6379:6379"
+  

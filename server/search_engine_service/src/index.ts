@@ -23,26 +23,27 @@ if (cluster.isPrimary) {
   }
 } else {
   const model = new Ollama({
-    model: "mistral-ai",
+    model: "mistral",
     baseUrl: "http://localhost:11434",
     maxConcurrency: availableParallelism(),
   });
 
   const ollamaEmbeddingModel = new OllamaEmbeddings({
-    model: 'nomic-embed',
+    model: 'nomic-embed-text',
     maxConcurrency: availableParallelism(),
     baseUrl: 'http://localhost:11434/',
   });
 
-  const redisC = redisClient();
-  redisC.on('error', err => console.log('Redis Client Error', err));
+  // const redisC = redisClient();
+  // redisC.on('error', err => console.log('Redis Client Error', err));
 
-  const asyncRedisConnect = async () => {
-    await redisC.connect();
+  // const asyncRedisConnect = async () => {
+  //   await redisC.connect();
 
-  }
-  asyncRedisConnect();
-  redisC.hSet("", [])
+  // }
+  // asyncRedisConnect();
+  // redisC.hSet("", [])
+
   const app: Express = express();
   app.get("/", (req: Request, res: Response) => {
     res.end(process.pid + " alive!");
@@ -51,10 +52,15 @@ if (cluster.isPrimary) {
   app.get(
     "/search",
     async (req: Request<{}, {}, {}, { s: string }>, res: Response) => {
-      if (req.query.s !== '')
-        return;
-      const queryEmbedding: number[] = await ollamaEmbeddingModel.embedQuery(req.query.s);
+      console.log(req.query.s)
+      try {
+        const queryEmbedding: number[] = await ollamaEmbeddingModel.embedQuery(req.query.s);
+        console.log(queryEmbedding)
 
+      } catch (error) {
+        console.log("<<Model error>>")
+      }
+      res.end("Received")
     }
   );
 
