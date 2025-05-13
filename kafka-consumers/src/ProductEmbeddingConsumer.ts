@@ -26,11 +26,13 @@ if (cluster.isPrimary) {
 } else {
   const embeddingModel = new OllamaEmbeddings({
     model: 'nomic-embed',
-    baseUrl: 'http://localhost:11434'
+    baseUrl: 'http://localhost:11434',
+    maxConcurrency: availableParallelism()
   });
   const model = new Ollama({
     model: "mistral-ai",
     baseUrl: "http://localhost:11434",
+    maxConcurrency: availableParallelism()
   });
 
   const sanityClient = SanityClient(sanityConfig);

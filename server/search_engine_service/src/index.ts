@@ -5,6 +5,9 @@ import cluster from "cluster";
 import { spawn } from "node:child_process";
 import { Ollama, OllamaEmbeddings } from "@langchain/ollama";
 import { createClient as redisClient } from "redis";
+import { createClient } from "@sanity/client";
+import { knn } from "./knn";
+import { sanityConfig } from "../utils";
 
 dotenv.config();
 
@@ -22,6 +25,8 @@ if (cluster.isPrimary) {
     });
   }
 } else {
+  const sanityClient = createClient(sanityConfig);
+
   const model = new Ollama({
     model: "mistral",
     baseUrl: "http://localhost:11434",
@@ -56,8 +61,11 @@ if (cluster.isPrimary) {
       try {
         const queryEmbedding: number[] = await ollamaEmbeddingModel.embedQuery(req.query.s);
         console.log(queryEmbedding)
-
-        console.log(JSON.parse(await redisC.get("id") as string))
+        let productEmbeddings: number[][] = JSON.parse(await redisC.get("embeddings") as string)
+        if (productEmbeddings.length) {
+          let resultEmbeddings = await sanityClient?.fetch(`*[_type=='productEmbeddings']`);
+          productEmbeddings = resultEmbeddings?.map(item => [item.product_id, item.embeddings])
+        }
       } catch (error) {
         console.log("<<Model error>>")
       }

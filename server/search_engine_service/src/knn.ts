@@ -27,14 +27,15 @@ function quickMerge(vectors: number[], l: number = 0, r: number = 0) {
     quickMerge(vectors, latestPivot + 1, r);
 }
 
-function knn(vectorEmbeddings: number[][], k: number = Math.trunc(vectorEmbeddings.length / 2)): number[] {
+export function knn(vectorEmbeddings: number[][], query: number[], k: number = Math.trunc(vectorEmbeddings.length / 2)): number[] {
     const result: number[] = [];
     for (let vector of vectorEmbeddings)
-        result.push(Math.sqrt(vector.reduce((prev, curr) => prev + curr * curr, 0)));
+        result.push(Math.sqrt(vector.reduce((prev, curr, i) => prev + (curr - query[i]) * (curr - query[i])
+            , 0)));
 
     quickMerge(result);
 
     return result;
 }
 
-console.log(knn([[4, 3], [12, 5], [12, 12], [12, 25], [23, 25]]))
+console.log(knn([[4, 3], [12, 5], [12, 12], [12, 25], [23, 25]], [4, 8]))
