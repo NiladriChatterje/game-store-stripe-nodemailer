@@ -69,6 +69,10 @@ export const ProductType = defineType({
       title: 'Category',
       type: 'string',
       validation: (rule) => rule.required(),
+      options: {
+        list: ["clothing", "food", "Groceries", "gadgets", "home-goods", "toys",],
+        layout: 'radio'
+      }
     }),
     defineField({
       name: 'seller',
