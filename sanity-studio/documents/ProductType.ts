@@ -1,4 +1,4 @@
-import {defineField, defineType} from 'sanity'
+import { defineField, defineType } from 'sanity'
 
 export const ProductType = defineType({
   name: 'product',
@@ -65,10 +65,16 @@ export const ProductType = defineType({
       validation: (rule) => rule.positive(),
     }),
     defineField({
+      name: 'category',
+      title: 'Category',
+      type: 'string',
+      validation: (rule) => rule.required(),
+    }),
+    defineField({
       name: 'seller',
       title: 'Seller',
       type: 'array',
-      of: [{type: 'reference', to: [{type: 'admin'}]}],
+      of: [{ type: 'reference', to: [{ type: 'admin' }] }],
       validation: (rule) => rule.required().min(1),
     }),
     defineField({
@@ -87,7 +93,7 @@ export const ProductType = defineType({
       name: 'keywords',
       title: 'Keywords',
       type: 'array',
-      of: [{type: 'string'}],
+      of: [{ type: 'string' }],
       description: 'improves search engine',
       options: {
         layout: 'tags',

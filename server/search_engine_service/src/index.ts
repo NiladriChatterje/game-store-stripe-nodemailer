@@ -65,6 +65,7 @@ if (cluster.isPrimary) {
         if (productEmbeddings.length) {
           let resultEmbeddings = await sanityClient?.fetch(`*[_type=='productEmbeddings']`);
           productEmbeddings = resultEmbeddings?.map(item => [item.product_id, item.embeddings])
+          knn(productEmbeddings, queryEmbedding);
         }
       } catch (error) {
         console.log("<<Model error>>")
