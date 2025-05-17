@@ -3,7 +3,7 @@ import { EachMessagePayload, Kafka, logLevel } from "kafkajs";
 import { availableParallelism } from "node:os";
 import { ProductType } from "@declaration/productType";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import { Ollama, OllamaEmbeddings } from "@langchain/ollama";
+import { OllamaEmbeddings } from "@langchain/ollama";
 import { createClient as RedisClient } from "redis";
 import { createClient as SanityClient } from "@sanity/client";
 import { sanityConfig } from "./utils";
@@ -27,11 +27,6 @@ if (cluster.isPrimary) {
   const embeddingModel = new OllamaEmbeddings({
     model: 'nomic-embed',
     baseUrl: 'http://localhost:11434',
-    maxConcurrency: availableParallelism()
-  });
-  const model = new Ollama({
-    model: "mistral-ai",
-    baseUrl: "http://localhost:11434",
     maxConcurrency: availableParallelism()
   });
 
@@ -74,7 +69,7 @@ if (cluster.isPrimary) {
               embeddings
             })
             console.log(embeddings)
-
+            redisClient.hset('embeddings', { [productPayload._id]: embeddings });
           });
 
 
