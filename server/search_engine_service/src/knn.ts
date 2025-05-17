@@ -1,11 +1,15 @@
 function partition(arr: number[], l: number, r: number) {
-    let pivot = arr[Math.trunc((l + r) / 2)]
+
+    const pivot: number = Math.trunc((l + r) / 2);
+
+    [arr[l], arr[pivot]] = [arr[pivot], arr[l]];
+    l++;
 
     while (l <= r) {
-        while (arr[l] < pivot)
+        while (arr[l] < arr[pivot])
             l++;
 
-        while (arr[r] > pivot)
+        while (arr[r] > arr[pivot])
             r--;
 
         if (l <= r) {
@@ -14,6 +18,8 @@ function partition(arr: number[], l: number, r: number) {
             r--;
         }
     }
+
+    [arr[l], arr[r]] = [arr[r], arr[l]];
     return l;
 }
 
