@@ -1,4 +1,4 @@
-function partition(arr: number[], l: number = 0, r: number = 0) {
+function partition(arr: number[], l: number, r: number) {
     let pivot = arr[Math.trunc((l + r) / 2)]
 
     while (l <= r) {
@@ -17,7 +17,7 @@ function partition(arr: number[], l: number = 0, r: number = 0) {
     return l;
 }
 
-function quickMerge(vectors: number[], l: number = 0, r: number = 0) {
+function quickMerge(vectors: number[], l: number = 0, r: number = vectors.length - 1) {
     if (l >= r)
         return;
 
