@@ -5,7 +5,7 @@ function partition(arr: number[], l: number, r: number) {
     [arr[l], arr[pivot]] = [arr[pivot], arr[l]];
     l++;
 
-    while (l <= r) {
+    while (l < r) {
         while (arr[l] < arr[pivot])
             l++;
 

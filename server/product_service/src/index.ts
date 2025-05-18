@@ -100,6 +100,11 @@ if (cluster.isPrimary) {
   //post to create the product
   app.post(
     "/add-product",
+    async (req: Request, res: Response, next: NextFunction) => {
+      req.headers.authorization
+      next();
+    }
+    ,
     async (req: Request<{}, {}, ProductType>, res: Response) => {
       const worker = new Worker("./dist/AddProductData.js", {
         workerData: req.body,
