@@ -1,29 +1,29 @@
-function partition(arr: number[], l: number, r: number) {
+function partition(arr: [string, number][], l: number, r: number) {
 
     const pivot: number = Math.trunc((l + r) / 2);
 
-    [arr[l], arr[pivot]] = [arr[pivot], arr[l]];
+    [arr[1][l], arr[1][pivot]] = [arr[1][pivot], arr[1][l]];
     l++;
 
     while (l < r) {
-        while (arr[l] < arr[pivot])
+        while (arr[1][l] < arr[1][pivot])
             l++;
 
-        while (arr[r] > arr[pivot])
+        while (arr[1][r] > arr[1][pivot])
             r--;
 
         if (l <= r) {
-            [arr[l], arr[r]] = [arr[r], arr[l]];
+            [arr[1][l], arr[1][r]] = [arr[1][r], arr[1][l]];
             l++;
             r--;
         }
     }
 
-    [arr[l], arr[r]] = [arr[r], arr[l]];
+    [arr[1][l], arr[1][r]] = [arr[1][r], arr[1][l]];
     return l;
 }
 
-function quickMerge(vectors: number[], l: number = 0, r: number = vectors.length - 1) {
+function quickMerge(vectors: [string, number][], l: number = 0, r: number = vectors.length - 1) {
     if (l >= r)
         return;
 
@@ -33,11 +33,20 @@ function quickMerge(vectors: number[], l: number = 0, r: number = vectors.length
     quickMerge(vectors, latestPivot + 1, r);
 }
 
-export function knn(vectorEmbeddings: number[][], query: number[], k: number = Math.trunc(vectorEmbeddings.length / 2)): number[] {
-    const result: number[] = [];
-    for (let vector of vectorEmbeddings)
-        result.push(Math.sqrt(vector.reduce((prev, curr, i) => prev + (curr - query[i]) * (curr - query[i])
-            , 0)));
+export function knn(vectorEmbeddings: Map<{ toString: {}; }, { toString: {}; }> | {
+    toString: {};
+}[], query: number[], k: number = 10): [string, number][] {
+    let vectorEmbeddingsMorphed: [string, number[]][];
+
+    for (let productKey in vectorEmbeddings)
+        vectorEmbeddingsMorphed.push([productKey, vectorEmbeddings[productKey]]);
+
+    const result: [string, number][] = [];
+    let dist;
+    for (let vector of vectorEmbeddingsMorphed) {
+        dist = Math.sqrt(vector[1].reduce((acc, curr, i) => (acc + (curr[i] - query[i]) * (curr[i] - query[i])), 0));
+        result.push([vector[0], dist])
+    }
 
     quickMerge(result);
 

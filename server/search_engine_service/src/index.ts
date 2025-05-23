@@ -61,8 +61,10 @@ if (cluster.isPrimary) {
       try {
         const queryEmbedding: number[] = await ollamaEmbeddingModel.embedQuery(req.query.s);
         console.log(queryEmbedding)
-        let productEmbeddings: number[][] = await redisC.hGetAll("embeddings")[0];
-        if (productEmbeddings.length) {
+        let productEmbeddings: Map<{ toString: {}; }, { toString: {}; }> | {
+          toString: {};
+        }[] = (await redisC.hGetAll("embeddings"))
+        if (productEmbeddings.keys()) {
           let resultEmbeddings = await sanityClient?.fetch(`*[_type=='productEmbeddings']`);
           productEmbeddings = resultEmbeddings?.map(item => [item.product_id, item.embeddings])
           knn(productEmbeddings, queryEmbedding);
