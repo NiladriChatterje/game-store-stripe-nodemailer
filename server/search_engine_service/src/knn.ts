@@ -47,12 +47,10 @@ export function knn(vectorEmbeddings: Map<{ toString: {}; }, { toString: {}; }> 
         dist = Math.sqrt(vector[1].reduce((acc, curr, i) => (acc + (curr - query[i]) * (curr - query[i])), 0));
         result.push([vector[0], dist])
     }
-
     quickMerge(result);
-    // result.sort((a, b) => a[1] - b[1])
 
     return result;
 }
 
-console.log(knn([["6", [28, 3]], ["23", [12, 5]], ["3", [12, 12]], ["14", [12, 25]],
-["5", [23, 25]]], [4, 8]))
+// console.log(knn([["6", [28, 3]], ["23", [12, 5]], ["3", [12, 12]], ["14", [12, 25]],
+// ["5", [23, 25]]], [4, 8]))

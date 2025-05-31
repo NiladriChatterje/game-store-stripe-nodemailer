@@ -67,7 +67,8 @@ if (cluster.isPrimary) {
         if (productEmbeddings.keys()) {
           let resultEmbeddings = await sanityClient?.fetch(`*[_type=='productEmbeddings']`);
           productEmbeddings = resultEmbeddings?.map(item => [item.product_id, item.embeddings])
-          knn(productEmbeddings, queryEmbedding);
+          const ProductId_distance_arr: [string, number][] = knn(productEmbeddings, queryEmbedding);
+
         }
       } catch (error) {
         console.log("<<Model error>>")

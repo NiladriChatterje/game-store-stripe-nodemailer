@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node --watch dist/index.js",
-    "dev": "tsc && node --watch dist/index.js"
+    "dev": "npx tsx src/index.ts"
   },
   "keywords": [],
   "author": "",

@@ -62,4 +62,4 @@ async function createAdmin() {
   });
 }
 
-createAdmin();
+createAdmin()

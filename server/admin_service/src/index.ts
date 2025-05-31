@@ -5,6 +5,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { availableParallelism } from "os";
 import { AdminFieldsType } from "./delcarations/AdminFieldType";
+import { getUserOrders } from "./FetchAdminProducts";
 
 dotenv.config();
 
@@ -87,6 +88,10 @@ if (cluster.isPrimary) {
 
   app.patch(
     "/update-info",
+    async (req: Request, res: Response, next: NextFunction) => {
+      if (req.headers.authorization?.split(" "))
+        next()
+    },
     (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
       const worker = new Worker("./dist/UpdateInfo.js", {
         workerData: {
@@ -94,22 +99,22 @@ if (cluster.isPrimary) {
         },
       });
 
-      worker.on("message", (data) => {});
+      worker.on("message", (data) => { });
     }
   );
 
   app.get(
     "/:_id/product-list",
     (req: Request<{ _id: string }>, res: Response) => {
-      const worker = new Worker("./dist/FetchAdminProducts.js", {
-        workerData: {
-          userId: req.params._id,
-        },
-      });
 
-      worker.on("message", (data) => {
-        res.status(200).send(data);
-      });
+      getUserOrders(req.params._id)
+        .then(result => {
+          res.status(200).send(result);
+        })
+        .catch(error => {
+          res.status(500).send(error);
+        })
+
     }
   );
   app.post("/fetch-mail-otp", (req: Request, res: Response) => {
@@ -120,6 +125,7 @@ if (cluster.isPrimary) {
         confirmation: OTP,
       },
     });
+    res.status(200).send("email sent successfully!")
   });
 
   app.post("/fetch-phone-otp", (req: Request, res: Response) => {

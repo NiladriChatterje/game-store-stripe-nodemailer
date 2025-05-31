@@ -6,7 +6,8 @@ import dotenv from "dotenv";
 import { availableParallelism } from "os";
 import { ProductType } from "@declaration/index.js";
 import { sanityConfig } from "@utils/index.js";
-import { createClient } from "@sanity/client";
+import { createClient as SanityClient } from "@sanity/client";
+import { createClient as RedisClient, RedisClientType } from "redis";
 dotenv.config();
 
 if (cluster.isPrimary) {
@@ -21,7 +22,8 @@ if (cluster.isPrimary) {
   }
 } else {
   const app: Express = express();
-  const sanityClient = createClient(sanityConfig);
+  const sanityClient = SanityClient(sanityConfig);
+  const redisClient: RedisClientType = RedisClient();
 
   app.use(cors());
   app.use(express.json({ limit: "25mb" }));
@@ -35,7 +37,13 @@ if (cluster.isPrimary) {
     res.end("pinged!");
   });
 
+  //for all users
   app.get("/fetch-all-products", async (req: Request, res: Response) => {
+    try {
+
+    } catch (e: Error | any) {
+
+    }
     res.end(await sanityClient.fetch(`*[_type=="product"]`));
   });
 
@@ -101,8 +109,14 @@ if (cluster.isPrimary) {
   app.post(
     "/add-product",
     async (req: Request, res: Response, next: NextFunction) => {
-      req.headers.authorization
-      next();
+      const token = req.headers.authorization?.split(' ')[1];
+      if (!token)
+        res.status(401).send('Missing token!');
+      const result = await sanityClient.fetch(`count(*[_type=='admin' && _id=='${token}'])`)
+      if (result > 0)
+        next();
+      else
+        res.status(403).send('Unauthorized token!');
     }
     ,
     async (req: Request<{}, {}, ProductType>, res: Response) => {

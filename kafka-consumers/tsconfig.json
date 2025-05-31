@@ -7,6 +7,8 @@
         "target": "es2020",
         "module": "NodeNext",
         "noImplicitAny": true,
+        "noEmit": true,
+        "allowImportingTsExtensions": true,
         "baseUrl": ".",
         "paths": {
             "@/*":["src/*"],
