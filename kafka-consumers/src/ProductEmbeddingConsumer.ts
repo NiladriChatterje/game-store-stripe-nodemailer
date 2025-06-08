@@ -32,7 +32,7 @@ if (cluster.isPrimary) {
 
   const sanityClient = SanityClient(sanityConfig);
 
-  const redisClient = RedisClient();
+  // const redisClient = RedisClient();
   async function main() {
     const consumer = kafka.consumer({
       groupId: "product-embedding",
@@ -52,25 +52,27 @@ if (cluster.isPrimary) {
 
       try {
         const productPayload: ProductType = JSON.parse(message.value.toString());
-        const splitter = new RecursiveCharacterTextSplitter({
-          chunkSize: 1024,
-        });
+        console.log(`product payload :`, productPayload);
+
+        // const splitter = new RecursiveCharacterTextSplitter({
+        //   chunkSize: 1024,
+        // });
 
 
-        splitter.splitText(productPayload.productDescription + '\n' +
-          productPayload.keywords.map(item => item + ', '))
-          .then(async onfulfilled => {
-            const embeddings = await embeddingModel
-              .embedQuery(onfulfilled.join(" "));
+        // splitter.splitText(productPayload.productDescription + '\n' +
+        //   productPayload.keywords.map(item => item + ', '))
+        //   .then(async onfulfilled => {
+        //     const embeddings = await embeddingModel
+        //       .embedQuery(onfulfilled.join(" "));
 
-            sanityClient?.createIfNotExists({
-              _id: productPayload._id,
-              _type: "productEmbeddings",
-              embeddings
-            })
-            console.log(embeddings)
-            redisClient.hSet("embeddings", productPayload._id, JSON.stringify(embeddings))
-          });
+        //     sanityClient?.createIfNotExists({
+        //       _id: productPayload._id,
+        //       _type: "productEmbeddings",
+        //       embeddings
+        //     })
+        //     console.log(embeddings)
+        //     redisClient.hSet("embeddings", productPayload._id, JSON.stringify(embeddings))
+        //   });
 
 
       } catch (error: Error | any) {
@@ -79,7 +81,7 @@ if (cluster.isPrimary) {
     }
 
     consumer.run({
-      partitionsConsumedConcurrently: 6,
+      partitionsConsumedConcurrently: 5,
       eachMessage: handleEachMessages,
       autoCommit: false,
     });

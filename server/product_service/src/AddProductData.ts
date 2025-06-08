@@ -21,12 +21,14 @@ async function addProductData(workerData: ProductType) {
     });
 
     parentPort?.postMessage({ status: 200, value: recordMetaData });
+    await producer.disconnect();
   } catch (e: Error | any) {
     parentPort?.postMessage({
       status: 500,
       value: e?.message,
     });
   }
+
 }
 
 addProductData(workerData);

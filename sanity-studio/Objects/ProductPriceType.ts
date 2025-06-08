@@ -13,7 +13,8 @@ export const productPriceType = defineType({
             options: {
                 list: currency,
                 layout: 'radio'
-            }
+            },
+            initialValue: 'INR'
 
         }),
         defineField({

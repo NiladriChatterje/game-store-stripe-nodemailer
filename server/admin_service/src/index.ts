@@ -5,9 +5,19 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { availableParallelism } from "os";
 import { AdminFieldsType } from "./delcarations/AdminFieldType";
-import { getUserOrders } from "./FetchAdminProducts";
+import { createClient, SanityClient } from '@sanity/client'
+import { sanityConfig } from './utils/index.js';
 
 dotenv.config();
+
+async function getUserOrders(
+  adminId: string) {
+  const sanityClient: SanityClient = createClient(sanityConfig);
+  const result = await sanityClient.fetch(
+    `[_type=="admin" && _id=="${adminId}"]{productReferenceAfterListing}`,
+  )
+  return result
+}
 
 if (cluster.isPrimary) {
   new Worker("./dist/BackgroundPingProcess.js");
@@ -89,7 +99,7 @@ if (cluster.isPrimary) {
   app.patch(
     "/update-info",
     async (req: Request, res: Response, next: NextFunction) => {
-      if (req.headers.authorization?.split(" "))
+      if (req.headers.authorization?.split(" ")[1])
         next()
     },
     (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
@@ -136,6 +146,8 @@ if (cluster.isPrimary) {
         confirmation: OTP,
       },
     });
+
+    res.send("SMS sent");
   });
 
   app.listen(process.env.PORT, () =>

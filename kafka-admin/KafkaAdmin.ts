@@ -15,43 +15,6 @@ async function admin() {
   try {
     console.log(await admin.listTopics());
 
-    //product topic for DB
-    await admin
-      .createTopics({
-        topics: [
-          {
-            topic: "product-db-save-topic",
-            numPartitions: 5,
-            replicationFactor: 3,
-          },
-        ],
-        waitForLeaders: true,
-        timeout: 120000,
-      })
-    // .then((result: boolean) => {
-    //   // if (!result) throw new Error("<product-topic-creation-failed>");
-    // })
-    // .catch((err: Error) => console.log("<failed! Might be created earlier> or ",
-    //   err.message));
-
-    //product topic for Embeddings
-    await admin
-      .createTopics({
-        topics: [
-          {
-            topic: "product-embedding-topic",
-            numPartitions: 5,
-            replicationFactor: 3,
-          },
-        ],
-        waitForLeaders: true,
-        timeout: 120000,
-      })
-    // .then((result: boolean) => {
-    //   // if (!result) throw new Error("<product-topic-creation-failed>");
-    // })
-    // .catch((err: Error) => console.log("<failed! Might be created earlier> or ",
-    //   err.message));
 
     // admin-create-topic
     await admin
@@ -66,14 +29,10 @@ async function admin() {
         waitForLeaders: true,
         timeout: 60000,
       })
-    // .then((result: boolean) => {
-    //   if (!result) throw new Error("<admin-topic-creation-failed>");
-    // })
-    // .catch((err: Error) => console.log("<failed! Might be created earlier> or ",
-    //   err.message));
+
 
     //admin-update-topic
-    admin
+    await admin
       .createTopics({
         topics: [
           {
@@ -85,14 +44,10 @@ async function admin() {
         waitForLeaders: true,
         timeout: 60000,
       })
-      .then((result: boolean) => {
-        if (!result) throw new Error("<product-topic-creation-failed>");
-      })
-      .catch((err: Error) => console.log("<failed! Might be created earlier> or ",
-        err.message));
+
 
     //admin-update-topic
-    admin
+    await admin
       .createTopics({
         topics: [
           {
@@ -104,16 +59,10 @@ async function admin() {
         waitForLeaders: true,
         timeout: 60000,
       })
-      .then((result: boolean) => {
-        if (!result) throw new Error("<product-topic-creation-failed>");
-      })
-      .catch((err: Error) => console.log("<failed! Might be created earlier> or ",
-        err.message));
 
-    // admin
+    // await admin
     //   .deleteTopics({ topics: ["product-embedding-topic", "product-db-save-topic"] })
-    //   .then((topic) => topic + " successfully deleted")
-    //   .catch((err) => "<No such Topic to delete>");
+
   } catch (err: Error | any) {
     console.error(err?.message);
   } finally {

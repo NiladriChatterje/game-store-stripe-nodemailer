@@ -1,5 +1,12 @@
 {
   "dependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.15.30",
+    "@types/shortid": "^2.2.0",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "razorpay": "^2.9.6",
+    "shortid": "^2.2.17",
     "socket.io": "^4.8.1"
   },
   "name": "payment_service",
@@ -7,10 +14,12 @@
   "description": "",
   "main": "index.js",
   "devDependencies": {
+    "ts-patch": "^3.3.0",
     "typescript": "^5.7.3"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev":"npx tspc && node dist/index.js",
+    "start":"npx tspc && node dist/index.js"
   },
   "keywords": [],
   "author": "",

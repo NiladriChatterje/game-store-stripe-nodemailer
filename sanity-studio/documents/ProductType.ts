@@ -54,11 +54,6 @@ export const ProductType = defineType({
       description: 'To uniquely identify every product globally',
     }),
     defineField({
-      name: 'modelNumber',
-      title: 'Model Number',
-      type: 'string',
-    }),
-    defineField({
       name: 'quantity',
       title: 'Quantity',
       type: 'number',
@@ -73,6 +68,12 @@ export const ProductType = defineType({
         list: ["clothing", "food", "Groceries", "gadgets", "home-goods", "toys",],
         layout: 'radio'
       }
+    }),
+    defineField({
+      name: 'modelNumber',
+      title: 'Model Number',
+      type: 'string',
+      hidden: ({ parent }) => !(parent?.category == 'gadgets')
     }),
     defineField({
       name: 'seller',

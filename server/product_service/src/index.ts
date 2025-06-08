@@ -38,15 +38,12 @@ if (cluster.isPrimary) {
 
     async function authMiddleware(req: Request, res: Response, next: NextFunction) {
       const token = req.headers.authorization?.split(' ')[1];
-      if (!token || !process.env.AUTH_SECRET_KEY)
+      if (!token)
         res.status(401).send('Missing token!');
-      let decodedData
-      if (token && process.env.AUTH_SECRET_KEY)
-        decodedData = jwt.verify(token, process.env.AUTH_SECRET_KEY);
       let result;
-      result = (await redisClient.get(decodedData as string))?.length;
+      result = (await redisClient.get(token as string))?.length;
       if (!result)
-        result = await sanityClient.fetch(`count(*[_type=='admin' && _id=='${decodedData}'])`)
+        result = await sanityClient.fetch(`count(*[_type=='admin' && _id=='${token}'])`)
       if (result && result > 0)
         next();
       else
@@ -59,11 +56,6 @@ if (cluster.isPrimary) {
 
     //for all users [that's why no authentication middleware]
     app.get("/fetch-all-products", async (req: Request, res: Response) => {
-      try {
-
-      } catch (e: Error | any) {
-
-      }
       res.end(await sanityClient.fetch(`*[_type=="product"]`));
     });
 
@@ -94,42 +86,41 @@ if (cluster.isPrimary) {
 
     //fetch particular product info for edit
     app.get(
-      "/:adminId/fetch-product/:productId",
+      "/fetch-product/:productId",
+      authMiddleware,
       async (
         req: Request<{ productId: string; adminId: string }>,
         res: Response
       ) => {
-        const result = await sanityClient.fetch(
-          `*[_type=="admin" && _id==$adminId]`,
-          { adminId: req.params.adminId }
-        );
-        if (result.length === 0) res.status(403).send("<Not a valid admin>");
+        const token: string | undefined = req.headers.authorization?.split(' ')[1]
         console.log(req.params.productId);
-        const NotClonedObject = {
-          workerData: {
-            productId: req.params.productId,
-            adminId: req.params.adminId,
-          },
-        };
-        const worker = new Worker("./dist/fetchProductData.js", NotClonedObject);
+        if (token) {
+          const NotClonedObject = {
+            workerData: {
+              productId: req.params.productId,
+              adminId: token,
+            },
+          };
+          const worker = new Worker("./dist/fetchProductData.js", NotClonedObject);
 
-        worker.on("message", (value: ProductType[]) => {
-          console.log(
-            "Product Data of id " + req.params.productId + " : ",
-            value
-          );
-          res.status(200).send(value);
-        });
-        worker.on("error", (err: Error) => {
-          res.status(502).send("Service is down!");
-        });
+          worker.on("message", (value: ProductType[]) => {
+            console.log(
+              "Product Data of id " + req.params.productId + " : ",
+              value
+            );
+            res.status(200).json(value);
+          });
+          worker.on("error", (err: Error) => {
+            res.status(502).send("Service is down!");
+          });
+        }
       }
     );
 
     //post to create the product
     app.post(
       "/add-product",
-      authMiddleware,
+      // authMiddleware,
       async (req: Request<{}, {}, ProductType>, res: Response) => {
         const worker = new Worker("./dist/AddProductData.js", {
           workerData: req.body,
@@ -142,9 +133,11 @@ if (cluster.isPrimary) {
     );
 
     //patch to update same product
-    app.patch("/update-product", async (req: Request, res: Response) => {
-      const { adminId, plan } = req.body;
-    });
+    app.patch("/update-product",
+      authMiddleware,
+      async (req: Request, res: Response) => {
+        const { adminId, plan } = req.body;
+      });
 
     app.listen(process.env.PORT ?? 5002, () =>
       console.log("listening on PORT:" + process.env.PORT)
