@@ -8,7 +8,6 @@ import { ProductType } from "@declaration/index.js";
 import { sanityConfig } from "@utils/index.js";
 import { createClient as SanityClient } from "@sanity/client";
 import { createClient as RedisClient, RedisClientType } from "redis";
-import jwt from 'jsonwebtoken'
 dotenv.config();
 
 if (cluster.isPrimary) {
@@ -55,8 +54,10 @@ if (cluster.isPrimary) {
     });
 
     //for all users [that's why no authentication middleware]
-    app.get("/fetch-all-products", async (req: Request, res: Response) => {
-      res.end(await sanityClient.fetch(`*[_type=="product"]`));
+    app.get("/fetch-all-products/:page", async (req: Request<{ page: number }>, res: Response) => {
+      const result = await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`)
+      console.log(result)
+      res.json(result);
     });
 
     //fetch product inventory for current admin

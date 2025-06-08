@@ -8,8 +8,8 @@ import { Buffer } from 'node:buffer'
 import { open, openSync, writeFile } from 'node:fs'
 import path from 'node:path'
 import type { ProductType } from '../declaration/index.js'
-// import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 dotenv.config()
+// import multer, { diskStorage, Multer, StorageEngine } from 'multer';
 
 // const diskStorageConfig = diskStorage({
 //     destination(req, file, callback) {
@@ -94,7 +94,7 @@ if (cluster.isPrimary) {
     //     h++
     // }
     const worker = new Worker('./dist/ProductDetailsHandling.js')
-    worker.on('message', data => {})
+    worker.on('message', data => { })
     worker.postMessage(req.body, [req.body])
     res.end('ok')
   })
