@@ -70,10 +70,7 @@ if (cluster.isPrimary) {
     //fetch product inventory for current admin
     app.get(
       "/:_id/fetch-products",
-      async (req: Request<{ _id: string }>, res: Response, next: NextFunction) => {
-
-        next();
-      },
+      authMiddleware,
       (req: Request<{ _id: string }>, res: Response) => {
         console.log(req.params._id);
         const NotClonedObject = {

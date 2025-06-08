@@ -42,7 +42,7 @@ export function knn(vectorEmbeddings: Map<{ toString: {}; }, { toString: {}; }> 
         vectorEmbeddingsMorphed.push(vectorEmbeddings[productKey]);
 
     const result: [string, number][] = [];
-    let dist;
+    let dist: number;
     for (let vector of vectorEmbeddingsMorphed) {
         dist = Math.sqrt(vector[1].reduce((acc, curr, i) => (acc + (curr - query[i]) * (curr - query[i])), 0));
         result.push([vector[0], dist])

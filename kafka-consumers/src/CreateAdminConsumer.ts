@@ -2,12 +2,15 @@ import { createClient, SanityClient } from "@sanity/client";
 import { EachMessagePayload, Kafka } from "kafkajs";
 import { sanityConfig } from "./utils";
 import { AdminFieldsType } from "@declaration/AdminFieldType";
+import { createClient as redisClient } from "redis";
 
 async function createAdmin() {
   const kafka = new Kafka({
     clientId: "xvstore",
     brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
   });
+
+  const redisC = redisClient();
 
   const consumer = kafka.consumer({
     groupId: "admin-record",
@@ -52,6 +55,7 @@ async function createAdmin() {
             .then(async () => {
               await heartbeat(); // to let the broker know that the consumer in the group is still alive
             });
+          redisC.set(onfulfilled.username, onfulfilled.username);
         })
         .catch((err) => console.log(err));
   }
