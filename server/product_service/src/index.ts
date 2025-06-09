@@ -54,10 +54,20 @@ if (cluster.isPrimary) {
     });
 
     //for all users [that's why no authentication middleware]
-    app.get("/fetch-all-products/:page", async (req: Request<{ page: number }>, res: Response) => {
-      const result = await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`)
-      console.log(result)
-      res.json(result);
+    app.get("/fetch-products/:category/:page", async (req: Request<{ category: string; page: number }>, res: Response) => {
+      res.setHeader('Content-Type', 'application/json');
+      switch (req.params.category) {
+        case 'all': res.json(await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`));
+          break;
+        case 'groceries': res.json(await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`));
+          break;
+        case 'gadgets': res.json(await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`));
+          break;
+        case 'toys': res.json(await sanityClient.fetch(`*[_type=="product" && category=="toys"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`));
+          break;
+        default: res.json([]);
+      }
+
     });
 
     //fetch product inventory for current admin

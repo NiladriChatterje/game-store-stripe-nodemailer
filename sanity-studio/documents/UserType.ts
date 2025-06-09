@@ -31,6 +31,12 @@ export const UserType = defineField({
             name: 'address',
             title: 'Address',
             type: 'AddressObjectType'
+        }),
+        defineField({
+            name: 'cart',
+            title: 'cart',
+            type: 'array',
+            of: [{ type: 'reference', to: [{ type: 'product' }] }]
         })
     ]
 })
