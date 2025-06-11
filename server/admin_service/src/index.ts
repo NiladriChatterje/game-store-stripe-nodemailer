@@ -11,15 +11,6 @@ import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 
 dotenv.config();
 
-async function getUserOrders(
-  adminId: string) {
-  const sanityClient: SanityClient = createClient(sanityConfig);
-  const result = await sanityClient.fetch(
-    `[_type=="admin" && _id=="${adminId}"]{productReferenceAfterListing}`,
-  )
-  return result
-}
-
 if (cluster.isPrimary) {
   new Worker("./dist/BackgroundPingProcess.js");
 
@@ -110,6 +101,7 @@ if (cluster.isPrimary) {
           `*[_type=='admin' && _id=='${req.params._id}']`
         );
         res.status(200).json(result);
+        return;
       } catch (e) {
         res.status(500).json([]);
       }
@@ -140,18 +132,20 @@ if (cluster.isPrimary) {
 
   app.get(
     "/:_id/product-list",
-    (req: Request<{ _id: string }>, res: Response) => {
-
-      getUserOrders(req.params._id)
-        .then(result => {
-          res.status(200).send(result);
-        })
-        .catch(error => {
-          res.status(500).send(error);
-        })
-
+    async (req: Request<{ _id: string }>, res: Response) => {
+      try {
+        const sanityClient: SanityClient = createClient(sanityConfig);
+        const result = await sanityClient.fetch(
+          `[_type=="admin" && _id=="${req.params._id}"]{productReferenceAfterListing}`,
+        )
+        res.status(200).send(result);
+      } catch (error) {
+        res.status(500).send(error);
+      }
     }
   );
+
+
   app.post("/fetch-mail-otp", (req: Request, res: Response) => {
     const OTP = Math.trunc(Math.random() * 10 ** 6);
     const worker = new Worker("./dist/EmailWorker.js", {
