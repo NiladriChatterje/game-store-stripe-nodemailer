@@ -18,21 +18,16 @@ const kafka = new Kafka({
 const producer = kafka.producer();
 
 async function produce() {
-  const transaction = await producer.transaction();
-  transaction
+
+  await producer.connect();
+
+  await producer
     .send({
       topic: "admin-subscription-transaction",
       messages: [{ value: JSON.stringify(workerData) }],
     })
-    .then(async (result) => {
-      console.log(result);
-      //sanity works
-      await transaction.commit();
-    })
-    .catch(async (e) => {
-      await transaction.abort();
-    })
-    .finally(async () => {});
+
+  await producer.disconnect()
 }
 
 produce()

@@ -7,6 +7,7 @@ import { availableParallelism } from "os";
 import { AdminFieldsType } from "./delcarations/AdminFieldType";
 import { createClient, SanityClient } from '@sanity/client'
 import { sanityConfig } from './utils/index.js';
+import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 
 dotenv.config();
 
@@ -25,16 +26,33 @@ if (cluster.isPrimary) {
   let p;
   for (let i = 0; i < availableParallelism(); i++) {
     p = cluster.fork();
+
     p.on("exit", (_statusCode: number) => {
       p = cluster.fork();
     });
   }
 } else {
+  const kafka = new Kafka({
+    clientId: "xv store",
+    brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
+    retry: {
+      retries: 2,
+    },
+    logLevel: logLevel.ERROR,
+    logCreator: (logEntry) => {
+      return ({ namespace, level, label, log }) => {
+        const { message, ...extra } = log;
+
+      };
+    },
+  });
   const app: Express = express();
+  const sanityClient: SanityClient = createClient(sanityConfig);
 
   app.use(cors());
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     next();
@@ -46,55 +64,58 @@ if (cluster.isPrimary) {
 
   app.post(
     "/create-admin",
-    (req: Request<{}, AdminFieldsType>, res: Response) => {
-      console.log(req.body);
-      const NotClonedObject = {
-        workerData: {
-          value: req.body,
-        },
-      };
-      let worker = new Worker("./dist/CreateAdmin.js", NotClonedObject);
+    async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
+      const value = req.body;
 
-      worker.on("message", (logLevel: { value: string; status: number }) => {
-        console.log("<create Admin worker> : ", logLevel);
-        res.status(logLevel.status).send(logLevel.value);
-      });
-
-      //respinning worker on failure
-      worker.on("error", (_error: Error) => {
-        console.log("<createAdmin-Worker-error>");
-        console.log("<Restarting-another-createAdmin-Worker>");
-
-        worker = new Worker("./dist/CreateAdmin.js", NotClonedObject);
-
-        worker.on("message", (logLevel: { value: string; status: number }) => {
-          console.log("<create Admin worker> : ", logLevel);
-          res.status(logLevel.status).send(logLevel.value);
+      console.log("<admin-data-received> : ", value);
+      let producer: Producer;
+      try {
+        producer = kafka.producer({
+          allowAutoTopicCreation: false,
+          transactionTimeout: 60000,
         });
-      });
+
+        await producer.connect();
+
+        const recordMetaData: RecordMetadata[] = await producer.sendBatch({
+          topicMessages: [
+            {
+              topic: "admin-create-topic",
+              messages: [{ value: JSON.stringify(value) }],
+            },
+          ],
+        });
+
+        producer.on("producer.network.request_timeout", (ev) => {
+          res.status(503).
+            json("session timeout! Couldn't create profile.")
+        });
+
+        await producer.disconnect();
+      }
+      catch (err) {
+
+      };
+
     }
   );
 
   app.get(
     "/fetch-admin-data/:_id",
-    (req: Request<{ _id: string }>, res: Response) => {
+    async (req: Request<{ _id: string }>, res: Response) => {
       console.log(req.params._id);
-      const NotClonedObject = {
-        workerData: {
-          _id: req.params._id,
-        },
-      };
-      const worker = new Worker("./dist/fetchAdminData.js", NotClonedObject);
-      worker.on("message", (value) => {
-        console.log(value);
-        res.status(value.status).json(value.result);
-      });
 
-      worker.on("error", (err) => {
-        res.status(503).send(err.message);
-      });
-    }
-  );
+      try {
+        const result = await sanityClient?.fetch(
+          `*[_type=='admin' && _id=='${req.params._id}']`
+        );
+        res.status(200).json(result);
+      } catch (e) {
+        res.status(500).json([]);
+      }
+
+    });
+
 
   app.patch(
     "/update-info",
@@ -102,14 +123,18 @@ if (cluster.isPrimary) {
       if (req.headers.authorization?.split(" ")[1])
         next()
     },
-    (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
-      const worker = new Worker("./dist/UpdateInfo.js", {
-        workerData: {
-          adminPayload: req.body,
-        },
+    async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
+      const adminPayload: AdminFieldsType = req.body;
+      const producer = kafka.producer();
+      await producer.connect();
+
+      producer.send({
+        topic: "admin-update-topic",
+        messages: [{ value: JSON.stringify(adminPayload) }],
       });
 
-      worker.on("message", (data) => { });
+      await producer.disconnect();
+
     }
   );
 
@@ -150,7 +175,7 @@ if (cluster.isPrimary) {
     res.send("SMS sent");
   });
 
-  app.listen(process.env.PORT, () =>
+  app.listen(process.env.PORT ?? 5003, () =>
     console.log("listening on PORT:" + process.env.PORT)
   );
 }
