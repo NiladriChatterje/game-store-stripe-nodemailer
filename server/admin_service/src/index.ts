@@ -8,11 +8,32 @@ import { AdminFieldsType } from "./delcarations/AdminFieldType";
 import { createClient, SanityClient } from '@sanity/client'
 import { sanityConfig } from './utils/index.js';
 import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
+import { createTransport } from "nodemailer";
+import { ClerkExpressRequireAuth } from "@clerk/clerk-sdk-node";
+import { spawn } from 'node:child_process'
+
 
 dotenv.config();
 
 if (cluster.isPrimary) {
-  new Worker("./dist/BackgroundPingProcess.js");
+  let old_child_process: any[] = []
+  setInterval(() => {
+    const child_process = spawn('curl.exe', [
+      '-X',
+      'GET',
+      `http://localhost:${process.env.PORT}/`,
+    ])
+
+    while (old_child_process.length > 0) {
+      let pop_process = old_child_process.pop()
+      pop_process?.kill(0)
+    }
+
+    child_process.stdout.on('data', buffer => {
+      console.log(buffer.toString('utf-8'))
+      old_child_process.push(child_process)
+    })
+  }, 60000)
 
   let p;
   for (let i = 0; i < availableParallelism(); i++) {
@@ -23,6 +44,14 @@ if (cluster.isPrimary) {
     });
   }
 } else {
+  const mailOption = {
+    service: 'gmail',
+    auth: {
+      user: process.env.AUTH_EMAIL,
+      pass: process.env.APP_KEY,
+    },
+  }
+  const mailTransport = createTransport(mailOption);
   const kafka = new Kafka({
     clientId: "xv store",
     brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
@@ -49,12 +78,15 @@ if (cluster.isPrimary) {
     next();
   });
 
+  //ping self to keep server awake
   app.get("/", (req: Request, res: Response) => {
     res.end("pinged!");
   });
 
+  //admin creation [kafka interaction]
   app.post(
     "/create-admin",
+    ClerkExpressRequireAuth(),
     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
       const value = req.body;
 
@@ -68,13 +100,9 @@ if (cluster.isPrimary) {
 
         await producer.connect();
 
-        const recordMetaData: RecordMetadata[] = await producer.sendBatch({
-          topicMessages: [
-            {
-              topic: "admin-create-topic",
-              messages: [{ value: JSON.stringify(value) }],
-            },
-          ],
+        const recordMetaData: RecordMetadata[] = await producer.send({
+          topic: "admin-create-topic",
+          messages: [{ value: JSON.stringify(value) }],
         });
 
         producer.on("producer.network.request_timeout", (ev) => {
@@ -82,20 +110,22 @@ if (cluster.isPrimary) {
             json("session timeout! Couldn't create profile.")
         });
 
+        res.status(201).send('Account will be created soon!')
         await producer.disconnect();
       }
       catch (err) {
 
       };
-
     }
   );
 
+
+  //get admin creds
   app.get(
     "/fetch-admin-data/:_id",
+    ClerkExpressRequireAuth(),
     async (req: Request<{ _id: string }>, res: Response) => {
       console.log(req.params._id);
-
       try {
         const result = await sanityClient?.fetch(
           `*[_type=='admin' && _id=='${req.params._id}']`
@@ -105,15 +135,19 @@ if (cluster.isPrimary) {
       } catch (e) {
         res.status(500).json([]);
       }
-
     });
 
 
+  //update admin new data
   app.patch(
     "/update-info",
+    ClerkExpressRequireAuth(),
     async (req: Request, res: Response, next: NextFunction) => {
-      if (req.headers.authorization?.split(" ")[1])
+      if (req.headers.authorization?.split(" ")[1]) {
+
         next()
+      }
+      res.sendStatus(401);
     },
     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
       const adminPayload: AdminFieldsType = req.body;
@@ -124,9 +158,7 @@ if (cluster.isPrimary) {
         topic: "admin-update-topic",
         messages: [{ value: JSON.stringify(adminPayload) }],
       });
-
       await producer.disconnect();
-
     }
   );
 

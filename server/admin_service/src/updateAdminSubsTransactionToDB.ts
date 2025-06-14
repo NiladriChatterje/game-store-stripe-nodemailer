@@ -18,9 +18,7 @@ const kafka = new Kafka({
 const producer = kafka.producer();
 
 async function produce() {
-
   await producer.connect();
-
   await producer
     .send({
       topic: "admin-subscription-transaction",
