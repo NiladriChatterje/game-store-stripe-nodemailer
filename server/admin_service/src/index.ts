@@ -128,12 +128,12 @@ if (cluster.isPrimary) {
       console.log(req.params._id);
       try {
         const result = await sanityClient?.fetch(
-          `*[_type=='admin' && _id=='${req.params._id}']`
+          `*[_type=='admin' && _id=='${req.params._id}'][0]`
         );
         res.status(200).json(result);
         return;
       } catch (e) {
-        res.status(500).json([]);
+        res.status(500).json({});
       }
     });
 
@@ -142,11 +142,14 @@ if (cluster.isPrimary) {
   app.patch(
     "/update-info",
     ClerkExpressRequireAuth(),
-    async (req: Request, res: Response, next: NextFunction) => {
-      if (req.headers.authorization?.split(" ")[1]) {
+    async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
 
-        next()
-      }
+      //now watching if record is in sanity.io else catfishing
+      const record = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId][0]`, {
+        adminId: req.body._id
+      })
+      next()
+
       res.sendStatus(401);
     },
     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {

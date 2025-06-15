@@ -1,28 +1,47 @@
 {
-  "dependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^22.15.30",
-    "@types/shortid": "^2.2.0",
-    "dotenv": "^16.5.0",
-    "express": "^5.1.0",
-    "razorpay": "^2.9.6",
-    "shortid": "^2.2.17",
-    "socket.io": "^4.8.1"
-  },
-  "name": "payment_service",
+  "name": "payment",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "devDependencies": {
-    "ts-patch": "^3.3.0",
-    "typescript": "^5.7.3"
+  "main": "./dist/src/index.js",
+  "type": "module",
+  "dependencies": {
+    "@clerk/clerk-sdk-node": "^4.13.23",
+    "@clerk/express": "^1.7.0",
+    "@sanity/cli": "^3.0.6",
+    "@sanity/client": "^6.22.5",
+    "@types/cors": "^2.8.17",
+    "@types/dotenv": "^6.1.1",
+    "@types/nodemailer": "^6.4.16",
+    "@types/shortid": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "kafkajs": "^2.2.4",
+    "nodemailer": "^6.9.1",
+    "razorpay": "^2.9.5",
+    "shortid": "^2.2.16",
+    "tsx": "^4.19.1"
   },
   "scripts": {
-    "dev":"npx tspc && node dist/index.js",
-    "start":"npx tspc && node dist/index.js"
+    "build": "npx tspc",
+    "start": "tspc && node dist/index",
+    "dev": "tspc && node dist/index"
   },
-  "keywords": [],
+  "keywords": [
+    "product_service",
+    "product-db",
+    "inventory-database"
+  ],
   "author": "",
-  "license": "ISC",
-  "type": "module"
+  "license": "MIT",
+  "description": "user related infos including carts, memberships, etc. manipulation",
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/module-alias": "^2.0.4",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.7.5",
+    "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.7.3",
+    "typescript-transform-paths": "^3.5.3"
+  }
 }
