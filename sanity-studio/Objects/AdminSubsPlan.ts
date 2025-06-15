@@ -49,15 +49,9 @@ export const AdminSubsPlan = defineType({
             type: 'string',
             validation: rule => rule.required()
         }),
-        defineField({
-            name: 'activePlan',
-            title: 'Active Plan',
-            type: 'number',
-            validation: rule => rule.required()
-        }),
 
         defineField({
-            name: 'planDuration',
+            name: 'planSchemaList',
             title: 'Plan',
             type: 'plan'
         })
