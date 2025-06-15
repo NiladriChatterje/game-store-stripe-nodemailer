@@ -26,14 +26,15 @@ async function init() {
             groupId: 'subscription-transaction',
         }));
 
-    async function handleMessage({ partition, message, topic }: EachMessagePayload) {
-        const { admin, plan } = JSON.parse(message.value.toString())
-        sanityClient.patch(plan?.document_id).insert('after', 'subscriptionPlan', [])//need to check documentation
+    async function handleMessage({ message }: EachMessagePayload) {
+        const { _id, subscription } = JSON.parse(message.value.toString())
+        sanityClient.patch(_id).insert('after', 'subscriptionPlan', [subscription])
+            .commit()//need to check documentation
     }
 
     for (let consumer of consumers)
         consumer.connect().then(() => {
-            consumer.subscribe({ topic: 'admin-subscription-transaction' }).then(() => {
+            consumer.subscribe({ topic: 'admin-update-topic' }).then(() => {
                 consumer.run({
                     eachMessage: handleMessage
                 })

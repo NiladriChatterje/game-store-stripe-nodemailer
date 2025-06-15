@@ -96,7 +96,7 @@ if (cluster.isPrimary) {
                 );
                 await producer.disconnect()
             } catch (err) {
-
+                console.log(err);
             }
         })
 
