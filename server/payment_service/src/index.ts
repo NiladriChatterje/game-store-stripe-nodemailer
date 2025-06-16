@@ -91,12 +91,14 @@ if (cluster.isPrimary) {
                 await producer.send(
                     {
                         topic: 'update-admin',
-                        messages: [{ value: JSON.stringify(subscription) }]
+                        messages: [{ value: JSON.stringify({ _id, subscription }) }]
                     }
                 );
                 await producer.disconnect()
+                res.status(200).send('new subscription added.');
             } catch (err) {
                 console.log(err);
+                res.status(501).send('issue');
             }
         })
 

@@ -49,7 +49,12 @@ export const AdminSubsPlan = defineType({
             type: 'string',
             validation: rule => rule.required()
         }),
-
+        defineField({
+            name: 'amount',
+            title: 'Amount',
+            type: 'number',
+            validation: rule => rule.required()
+        }),
         defineField({
             name: 'planSchemaList',
             title: 'Plan',

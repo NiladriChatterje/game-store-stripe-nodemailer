@@ -33,32 +33,29 @@ async function updateAdminRecord() {
       email,
       phone,
     }: AdminFieldsType = JSON.parse(message.value.toString());
-    let retry = true;
 
     try {
-      while (retry)
-        sanityClient
-          ?.patch(_id)
-          .set({
-            gstin,
-            address: {
-              pinCode,
-              county,
-              country,
-              state,
-            },
-            email,
-            phone: Number(phone),
-          })
-          .commit()
-          .then((_) => {
-            heartbeat();
-            retry = false;
-          })
-          .catch((_err) => {
-            throw Promise.reject();
-          });
-    } catch (e) {}
+      sanityClient
+        ?.patch(_id)
+        .set({
+          gstin,
+          address: {
+            pinCode,
+            county,
+            country,
+            state,
+          },
+          email,
+          phone: Number(phone),
+        })
+        .commit()
+        .then((_) => {
+          heartbeat();
+        })
+        .catch((_err) => {
+          throw Promise.reject();
+        });
+    } catch (e) { }
   }
 
   consumer.run({ eachMessage: handleMessage });

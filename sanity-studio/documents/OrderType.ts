@@ -12,16 +12,37 @@ export const OrderType = defineType({
         }),
         defineField({
             name: 'product',
-            type: 'array',
-            of: [{
-                type: 'reference',
-                to: { type: 'product' }
-            }]
+            type: 'reference',
+            to: [{ type: 'product' }]
         }),
         defineField({
             name: 'qty',
             type: 'number',
             validation: rule => rule.required().positive().min(1)
+        }),
+        defineField({
+            name: 'transactionId',
+            title: 'Transaction ID',
+            type: 'string',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'orderId',
+            title: 'Order ID',
+            type: 'string',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'paymentSignature',
+            title: 'Payment Signature',
+            type: 'string',
+            validation: rule => rule.required()
+        }),
+        defineField({
+            name: 'amount',
+            title: 'Amount',
+            type: 'number',
+            validation: rule => rule.required()
         }),
         defineField({
             name: 'status',
@@ -31,7 +52,8 @@ export const OrderType = defineType({
             options: {
                 list: ['orderPlaced', 'dispatched', 'shipping', 'shipped'],
                 layout: 'radio'
-            }
+            },
+            initialValue: 'orderPlaced'
         }),
 
     ]
