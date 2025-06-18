@@ -12,8 +12,9 @@ export const OrderType = defineType({
         }),
         defineField({
             name: 'product',
-            type: 'reference',
-            to: [{ type: 'product' }]
+            type: 'array',
+            of: [{ type: 'reference', to: [{ type: 'product' }] }]
+
         }),
         defineField({
             name: 'qty',

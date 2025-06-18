@@ -14,7 +14,8 @@ async function createOrderID({ price, currency }: { price: string, currency: str
         const response = await razorpay.orders.create({
             amount: Number(price),
             currency,
-            receipt: shortid()
+            receipt: shortid(),
+            first_payment_min_amount: 2000
         });
         parentPort?.postMessage({ ...response, status: 200 })
     } catch (e: Error | any) {

@@ -95,40 +95,29 @@ if (cluster.isPrimary) {
       }
     );
 
-    //fetch particular product info for edit
+    //fetch particular product info for user display
     app.get(
-      "/fetch-product/:productId",
-      authMiddleware,
+      "/fetch-product-detail/:productId",
       async (
-        req: Request<{ productId: string; adminId: string }>,
+        req: Request<{ productId: string; }>,
         res: Response
       ) => {
-        const token: string | undefined = req.headers.authorization?.split(' ')[1]
-        console.log(req.params.productId);
-        if (token) {
-          const NotClonedObject = {
-            workerData: {
-              productId: req.params.productId,
-              adminId: token,
-            },
-          };
-          const worker = new Worker("./dist/fetchProductData.js", NotClonedObject);
-
-          worker.on("message", (value: ProductType[]) => {
-            console.log(
-              "Product Data of id " + req.params.productId + " : ",
-              value
-            );
-            res.status(200).json(value);
-          });
-          worker.on("error", (err: Error) => {
+        const productId: string | undefined = req.params.productId
+        if (productId) {
+          try {
+            const result = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]`);
+            res.status(200).json(result);
+            return;
+          }
+          catch (err) {
             res.status(502).send("Service is down!");
-          });
+            return;
+          }
         }
       }
     );
 
-    //post to create the product
+    //post to kafka topic [product-topic] to create the product
     app.post(
       "/add-product",
       // authMiddleware,

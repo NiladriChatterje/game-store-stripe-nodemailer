@@ -7,7 +7,7 @@ import { availableParallelism } from 'os'
 import { Kafka, Producer } from 'kafkajs'
 import { spawn } from 'child_process'
 import { type Subscription } from '@declaration/index'
-import { clerkClient, clerkMiddleware } from '@clerk/express'
+import { ClerkExpressRequireAuth, clerkClient } from '@clerk/clerk-sdk-node'
 dotenv.config()
 
 if (cluster.isPrimary) {
@@ -75,12 +75,9 @@ if (cluster.isPrimary) {
 
 
     app.post('/admin-subscription',
-        clerkMiddleware({
-            secretKey: process.env.CLERK_SECRET_KEY,
-            publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
-        }),
+        ClerkExpressRequireAuth() as any,
         async (req: Request<{}, {}, { _id: string, subscription: Subscription }>, res: Response, next: NextFunction) => {
-            console.log(await clerkClient.users.getUser(req.body._id));
+
             next()
         },
         async (req: Request<{}, {}, { _id: string, subscription: Subscription }>, res: Response) => {
@@ -101,6 +98,15 @@ if (cluster.isPrimary) {
                 res.status(501).send('issue');
             }
         })
+
+
+    //put orders in the kafka
+    app.put('/user-order',
+        ClerkExpressRequireAuth() as any,
+        async (req: Request, res: Response, next: NextFunction) => {
+            res.send(await clerkClient.users.getUserList())
+        });
+
 
     app.listen(process.env.PORT ?? 5000, () =>
         console.log('listening on PORT:' + process.env.PORT),

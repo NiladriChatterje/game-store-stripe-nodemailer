@@ -4,7 +4,7 @@
   "main": "./dist/src/index.js",
   "type": "module",
   "dependencies": {
-    "@clerk/clerk-sdk-node": "4.13.23",
+    "@clerk/clerk-sdk-node": "^4.13.23",
     "@sanity/cli": "^3.0.6",
     "@sanity/client": "^6.22.5",
     "@types/cors": "^2.8.17",

@@ -120,7 +120,7 @@ if (cluster.isPrimary) {
   );
 
 
-  //get admin creds
+  //get admin credential
   app.get(
     "/fetch-admin-data/:_id",
     ClerkExpressRequireAuth(),
