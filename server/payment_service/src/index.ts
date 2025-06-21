@@ -8,6 +8,8 @@ import { Kafka, Producer } from 'kafkajs'
 import { spawn } from 'child_process'
 import { type Subscription } from '@declaration/index'
 import { ClerkExpressRequireAuth, clerkClient } from '@clerk/clerk-sdk-node'
+import Razorpay from 'razorpay'
+import shortid from 'shortid'
 dotenv.config()
 
 if (cluster.isPrimary) {
@@ -60,17 +62,28 @@ if (cluster.isPrimary) {
         const { price, currency } = req.body
         console.log(price)
         console.log(req.body)
-        const worker_razorpay = new Worker('./dist/RazorpayProcess.js', {
-            workerData: {
-                price,
-                currency,
-            },
-        })
+        try {
 
-        worker_razorpay.on('message', msg_event => {
-            console.log('message : ' + msg_event)
-            res.json(msg_event)
-        })
+            const razorpay = new Razorpay({
+                key_id: process.env.RAZORPAY_PUBLIC_KEY || '',
+                key_secret: process.env.RAZORPAY_SECRET_KEY
+            });
+            const response = await razorpay.orders.create({
+                amount: Number(price),
+                currency,
+                receipt: shortid(),
+                first_payment_min_amount: 2000
+            });
+            res.json({ ...response, status: 200 })
+        } catch (e: Error | any) {
+            res.json({
+                status: 500,
+                error: {
+                    message: e?.message,
+                },
+            });
+        }
+
     })
 
 

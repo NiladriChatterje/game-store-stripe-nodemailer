@@ -165,6 +165,7 @@ if (cluster.isPrimary) {
     }
   );
 
+  //get product list uploaded by an admin
   app.get(
     "/:_id/product-list",
     async (req: Request<{ _id: string }>, res: Response) => {
