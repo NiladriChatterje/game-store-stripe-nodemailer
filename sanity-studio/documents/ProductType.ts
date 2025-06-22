@@ -1,4 +1,36 @@
+import { prepareForPreview } from 'sanity'
 import { defineField, defineType } from 'sanity'
+export const pair = {
+  name: 'pair',
+  title: 'Pair',
+  type: 'object',
+  fields: [
+    defineField({
+      name: 'key',
+      title: 'Key',
+      type: 'string',
+      validation: Rule => Rule.required()
+    }),
+    defineField({
+      name: 'value',
+      title: 'Value',
+      type: 'string', // or 'number', 'boolean', etc.
+      validation: Rule => Rule.required()
+    })
+  ],
+  preview: {
+    select: {
+      key: 'key',
+      value: 'value'
+    },
+    prepare(selection: any) {
+      const { key, value } = selection
+      return {
+        title: `${key} => ${value}`
+      }
+    }
+  }
+}
 
 export const ProductType = defineType({
   name: 'product',
@@ -52,12 +84,14 @@ export const ProductType = defineType({
       title: 'EAN_UPC_ISBN_GTIN Number',
       type: 'string',
       description: 'To uniquely identify every product globally',
+      validation: rule => rule.required()
     }),
     defineField({
       name: 'quantity',
       title: 'Quantity',
-      type: 'number',
-      validation: (rule) => rule.positive(),
+      type: 'array',
+      of: [{ type: 'pair' }],
+      validation: (rule) => rule.required(),
     }),
     defineField({
       name: 'category',
@@ -65,7 +99,7 @@ export const ProductType = defineType({
       type: 'string',
       validation: (rule) => rule.required(),
       options: {
-        list: ["clothing", "food", "Groceries", "gadgets", "home-goods", "toys",],
+        list: ["clothes", "food", "Groceries", "gadgets", "home-goods", "toys",],
         layout: 'radio'
       }
     }),

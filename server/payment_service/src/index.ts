@@ -58,33 +58,35 @@ if (cluster.isPrimary) {
         res.end('pinged!')
     })
 
-    app.post('/razorpay', async (req: Request, res: Response) => {
-        const { price, currency } = req.body
-        console.log(price)
-        console.log(req.body)
-        try {
+    app.post('/razorpay',
+        ClerkExpressRequireAuth() as any,
+        async (req: Request, res: Response) => {
+            const { price, currency } = req.body
+            console.log(price)
+            console.log(req.body)
+            try {
 
-            const razorpay = new Razorpay({
-                key_id: process.env.RAZORPAY_PUBLIC_KEY || '',
-                key_secret: process.env.RAZORPAY_SECRET_KEY
-            });
-            const response = await razorpay.orders.create({
-                amount: Number(price),
-                currency,
-                receipt: shortid(),
-                first_payment_min_amount: 2000
-            });
-            res.json({ ...response, status: 200 })
-        } catch (e: Error | any) {
-            res.json({
-                status: 500,
-                error: {
-                    message: e?.message,
-                },
-            });
-        }
+                const razorpay = new Razorpay({
+                    key_id: process.env.RAZORPAY_PUBLIC_KEY || '',
+                    key_secret: process.env.RAZORPAY_SECRET_KEY
+                });
+                const response = await razorpay.orders.create({
+                    amount: Number(price),
+                    currency,
+                    receipt: shortid(),
+                    first_payment_min_amount: 2000
+                });
+                res.json({ ...response, status: 200 })
+            } catch (e: Error | any) {
+                res.json({
+                    status: 500,
+                    error: {
+                        message: e?.message,
+                    },
+                });
+            }
 
-    })
+        })
 
 
     app.post('/admin-subscription',

@@ -30,7 +30,7 @@ if (cluster.isPrimary) {
     });
 
     await consumer.connect();
-    await consumer.subscribe({ topic: "product-topic" });
+    await consumer.subscribe({ topic: "add-product-topic" });
 
     async function handleEachMessages({
       heartbeat,
@@ -45,20 +45,23 @@ if (cluster.isPrimary) {
         const productPayload: ProductType = JSON.parse(
           message.value.toString()
         );
-        const result = await sanityClient.create({
-          _type: "product",
-          ...productPayload,
-        });
-        productPayload._id = result._id;
-        await sanityClient
-          .patch(productPayload._id)
-          .append("productReferenceAfterListing", [productPayload])
-          .commit()
-          .then(() => {
-            consumer.commitOffsets([
-              { topic, partition, offset: message.offset },
-            ]);
+        const checkIfExist = await sanityClient.fetch(`*[_type=="product" && eanUpcIsbnGtinAsinNumber=='${productPayload.eanUpcNumber}'][0]`);
+        if (checkIfExist == null) {
+          const result = await sanityClient.createIfNotExists({
+            _id: productPayload?._id,
+            _type: "product",
+            ...productPayload,
           });
+
+          if (result)
+            await sanityClient.patch(productPayload.seller)
+              .append('productReferenceAfterListing', [result]).commit();
+        } else {
+          productPayload.seller
+        }
+        consumer.commitOffsets([
+          { topic, partition, offset: message.offset },
+        ]);
       } catch (error: Error | any) { }
     }
 

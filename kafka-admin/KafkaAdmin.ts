@@ -51,7 +51,20 @@ async function admin() {
       .createTopics({
         topics: [
           {
-            topic: "product-topic",
+            topic: "add-product-topic",
+            numPartitions: 5,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      })
+
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "update-product-topic",
             numPartitions: 5,
             replicationFactor: 3,
           },
@@ -61,7 +74,7 @@ async function admin() {
       })
 
     // await admin
-    //   .deleteTopics({ topics: ["product-embedding-topic", "product-db-save-topic"] })
+    //   .deleteTopics({ topics: ["product-topic", "product-db-save-topic"] })
 
   } catch (err: Error | any) {
     console.error(err?.message);

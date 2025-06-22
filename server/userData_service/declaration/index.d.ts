@@ -20,7 +20,7 @@ export declare type ProductType = {
     quantity: number;
     keywords: string[];
     discount: number;
-    seller?: string[];
+    seller?: string;
 };
 
 

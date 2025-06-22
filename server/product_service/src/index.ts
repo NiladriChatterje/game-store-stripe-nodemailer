@@ -11,6 +11,7 @@ import { createClient as SanityClient } from "@sanity/client";
 import { createClient as RedisClient, RedisClientType } from "redis";
 import { ClerkExpressRequireAuth } from "@clerk/clerk-sdk-node";
 import { spawn } from "child_process";
+import { Kafka } from "kafkajs";
 dotenv.config();
 
 if (cluster.isPrimary) {
@@ -46,6 +47,10 @@ if (cluster.isPrimary) {
   async function main() {
     const app: Express = express();
     const sanityClient = SanityClient(sanityConfig);
+    const kafka: Kafka = new Kafka({
+      clientId: 'xv-store',
+      brokers: ['localhost:9092', 'localhost:9093', 'localhost:9094']
+    });
     const redisClient: RedisClientType = RedisClient();
     await redisClient.connect();
     app.use(cors());
@@ -56,25 +61,31 @@ if (cluster.isPrimary) {
       next();
     });
 
-    async function authMiddleware(req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) {
-      const token = req.body._id;
-      if (!token)
+    async function authMiddleware(req: Request<{}, {}, any>, res: Response, next: NextFunction) {
+      const token = req.headers['x-admin-id'];
+      if (!token) {
         res.status(401).send('Missing token!');
+        return;
+      }
       let result;
-      result = (await redisClient.get(token as string))?.length;
-      if (!result)
-        result = await sanityClient.fetch(`count(*[_type=='admin' && _id=='${token}'])`)
+      result = (await redisClient.get(token as unknown as string))?.length;
+      if (result) {
+        res.status(200).json(result);
+        next();
+        return;
+      }
+      result = await sanityClient.fetch(`count(*[_type=='admin' && _id=='${token as unknown as string}'])`)
       if (result && result > 0)
         next();
       else
         res.status(403).send('Unauthorized token!');
     }
 
-    app.get("/", (req: Request, res: Response) => {
+    app.get("/", async (req: Request, res: Response) => {
       res.end("pinged!");
     });
 
-    //for all users [that's why no authentication middleware]
+    //for all users [that's why no authentication middleware] <Completed> | Dont touch
     app.get("/fetch-products/:category/:page", async (req: Request<{ category: string; page: number }>, res: Response) => {
       res.setHeader('Content-Type', 'application/json');
 
@@ -82,51 +93,141 @@ if (cluster.isPrimary) {
         switch (req.params.category) {
           case 'all': {
             let data: string[] = (await redisClient.hVals('products:all')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
-            let deserializedData: ProductType[] = data.map(item => JSON.parse(item));
             if (data.length > 0) {
-              res.json(deserializedData);
+              console.log(`<redis hit>`)
+              res.json(data.map(item => JSON.parse(item)));
               return;
             }
-            data = await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`);
-            deserializedData = data.map(item => JSON.parse(item));
-            for (let datum of deserializedData)
-              redisClient.hSet('products:all', datum._id, JSON.stringify(datum));
-            res.json(deserializedData);
+            data = await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+            ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`);
+            for (let datum of data) {
+              const deserializedData = datum as unknown as ProductType;
+              redisClient.hSet('products:all', deserializedData._id, JSON.stringify(datum));
+            }
+
+            res.json(data);
             return;
           }
+
           case 'groceries': {
-            let data = JSON.parse((await redisClient.hGet('products', 'groceries')) as string);
-            if (data) {
-              res.json(data);
+            let data: string[] = (await redisClient.hVals('products:groceries')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
+            if (data.length > 0) {
+              console.log(`<redis hit>`)
+              res.json(data.map(item => JSON.parse(item)));
               return;
             }
-            data = await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`);
-            redisClient.hSet("products", "groceries", JSON.stringify(data));
+            data = await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]
+            {
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`);
+            let deserializeDatum: ProductType;
+            for (let datum of data) {
+              deserializeDatum = datum as unknown as ProductType;
+              redisClient.hSet("products:groceries", deserializeDatum._id, JSON.stringify(datum));
+            }
             res.json(data);
             return;
           }
           case 'gadgets': {
-            let data = JSON.parse((await redisClient.hGet('products', 'gadgets')) as string);
-
-            if (data) {
-              res.json(data);
+            let data: string[] = (await redisClient.hVals('products:gadgets')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
+            if (data.length > 0) {
+              console.log(`<redis hit>`)
+              res.json(data.map(item => JSON.parse(item)));
               return;
             }
-            data = await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`);
-            redisClient.hSet("products", "gadgets", JSON.stringify(data));
+            data = await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`);
+            let deserializeDatum: ProductType;
+            for (let datum of data) {
+              deserializeDatum = datum as unknown as ProductType;
+              redisClient.hSet("products:gadgets", deserializeDatum._id, JSON.parse(datum));
+            }
             res.json(data);
             return;
           }
+
+          case 'toys': {
+            let data: string[] = (await redisClient.hVals('products:toys')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
+            if (data.length > 0) {
+              console.log(`<redis hit>`)
+              res.json(data.map(item => JSON.parse(item)));
+              return;
+            }
+            data = await sanityClient.fetch(`*[_type=="product" && category=="toys"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`);
+            let deserializeDatum: ProductType;
+            for (let datum of data) {
+              deserializeDatum = datum as unknown as ProductType;
+              redisClient.hSet("products:toys", deserializeDatum._id, JSON.parse(datum));
+            }
+            res.json(data);
+            return;
+          }
+
+          case 'clothes': {
+            let data: string[] = (await redisClient.hVals('products:clothes')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
+            if (data.length > 0) {
+              console.log(`<redis hit>`)
+              res.json(data.map(item => JSON.parse(item)));
+              return;
+            }
+            data = await sanityClient.fetch(`*[_type=="product" && category=="clothes"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`);
+            let deserializeDatum: ProductType;
+            for (let datum of data) {
+              deserializeDatum = datum as unknown as ProductType;
+              redisClient.hSet("products:clothes", deserializeDatum._id, JSON.parse(datum));
+            }
+            res.json(data);
+            return;
+          }
+
         }
       }
       switch (req.params.category) {
-        case 'all': res.json(await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`));
+        case 'all': res.json(await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`));
           break;
-        case 'groceries': res.json(await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`));
+        case 'groceries': res.json(await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`));
           break;
-        case 'gadgets': res.json(await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`));
+        case 'gadgets': res.json(await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`));
           break;
-        case 'toys': res.json(await sanityClient.fetch(`*[_type=="product" && category=="toys"][${(req.params.page - 1) * 10}...${req.params.page * 10}]`));
+        case 'toys': res.json(await sanityClient.fetch(`*[_type=="product" && category=="toys"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`));
+          break;
+        case 'clothes': res.json(await sanityClient.fetch(`*[_type=="product" && category=="clothes"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+             ...,
+            'quantity':quantity[][0].value,
+            'seller':null
+            }`));
           break;
         default: res.json([]);
       }
@@ -144,12 +245,14 @@ if (cluster.isPrimary) {
         const productId: string | undefined = req.params.productId
         if (productId) {
           try {
-            const fromRedisResult = await redisClient.hGet('products', productId)
-            if (fromRedisResult) {
-              res.send(200).json(JSON.parse(fromRedisResult));
-              return;
+            if (redisClient.isOpen) {
+              const fromRedisResult = await redisClient.hGet('products', productId)
+              if (fromRedisResult) {
+                res.send(200).json(JSON.parse(fromRedisResult));
+                return;
+              }
             }
-            const result = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]`);
+            const result: ProductType = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]`);
             res.status(200).json(result);
             return;
           }
@@ -164,7 +267,8 @@ if (cluster.isPrimary) {
     //post to kafka topic [product-topic] to create the product
     app.post(
       "/add-product",
-      // authMiddleware,
+      ClerkExpressRequireAuth(),
+      authMiddleware,
       async (req: Request<{}, {}, ProductType>, res: Response) => {
         const worker = new Worker("./dist/AddProductData.js", {
           workerData: req.body,
@@ -180,8 +284,23 @@ if (cluster.isPrimary) {
     app.patch("/update-product",
       ClerkExpressRequireAuth(),
       authMiddleware,
-      async (req: Request, res: Response) => {
-        const { adminId, plan } = req.body;
+      async (req: Request<{}, {}, ProductType>, res: Response) => {
+        const { _id, imagesBase64, } = req.body;
+        const producer = kafka.producer();
+        try {
+          await producer.connect();
+          producer.send({
+            topic: 'update-product-topic',
+            messages: [{ value: JSON.stringify(req.body) }]
+          })
+        } catch (err) {
+
+        } finally {
+          await producer.disconnect();
+        }
+
+
+
       });
 
     app.listen(process.env.PORT ?? 5002, () =>

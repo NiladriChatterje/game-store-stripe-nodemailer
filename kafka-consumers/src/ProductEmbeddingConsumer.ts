@@ -39,7 +39,7 @@ if (cluster.isPrimary) {
     });
 
     await consumer.connect();
-    await consumer.subscribe({ topic: "product-topic" });
+    await consumer.subscribe({ topics: ["add-product-topic", "update-product-topic"] });
 
     async function handleEachMessages({
       heartbeat,
