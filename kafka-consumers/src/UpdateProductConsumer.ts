@@ -48,10 +48,10 @@ if (cluster.isPrimary) {
                     message.value.toString()
                 );
 
-                const getQty = await sanityClient.fetch(`* [_type == 'product'
+                const getQty = await sanityClient.fetch(`*[_type == 'product'
                                 && seller[]._ref match "${productPayload.seller}"
-                            && quantity[].key match '${productPayload.pincode}'][0]{
-                            "quantity": quantity[key == ${productPayload.pincode}][0].value 
+                            && _id match '${productPayload._id}'][0]{
+                            "quantity": quantity[key match ${productPayload.pincode}][0].value 
                           }`)
                 const result = await sanityClient
                     .patch(productPayload._id)

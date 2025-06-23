@@ -56,6 +56,9 @@ if (cluster.isPrimary) {
           if (result)
             await sanityClient.patch(productPayload.seller)
               .append('productReferenceAfterListing', [result]).commit();
+
+          await sanityClient.patch(productPayload._id)
+            .append('seller', [await sanityClient.fetch(`*[_type=='admin' && _id=='${productPayload.seller}']`)]).commit();
         } else {
           productPayload.seller
         }
