@@ -16,7 +16,7 @@ async function addProductData(workerData: ProductType) {
     const producer = kafka.producer();
     producer.connect();
     const recordMetaData: RecordMetadata[] = await producer.send({
-      topic: "product-topic",
+      topic: "add-product-topic",
       messages: [{ value: JSON.stringify(workerData) }],
     });
 

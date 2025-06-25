@@ -1,6 +1,7 @@
 import { type ClientConfig } from "@sanity/client";
 import dotenv from "dotenv";
 dotenv.config();
+
 export const sanityConfig: ClientConfig = {
   projectId: process.env.SANITY_PROJECT_ID,
   dataset: "production",

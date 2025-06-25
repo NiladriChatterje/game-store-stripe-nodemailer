@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { availableParallelism } from "os";
 import { AdminFieldsType } from "./delcarations/AdminFieldType";
 import { createClient, SanityClient } from '@sanity/client'
+import { createClient as RedisClient } from "redis";
 import { sanityConfig } from './utils/index.js';
 import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 import { createTransport } from "nodemailer";
@@ -68,7 +69,8 @@ if (cluster.isPrimary) {
   });
   const app: Express = express();
   const sanityClient: SanityClient = createClient(sanityConfig);
-
+  const redisClient = RedisClient();
+  await redisClient.connect();
   app.use(cors());
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
@@ -86,7 +88,7 @@ if (cluster.isPrimary) {
   //admin creation [kafka interaction]
   app.post(
     "/create-admin",
-    ClerkExpressRequireAuth(),
+    // ClerkExpressRequireAuth(),
     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
       const value = req.body;
 
@@ -123,17 +125,27 @@ if (cluster.isPrimary) {
   //get admin credential
   app.get(
     "/fetch-admin-data/:_id",
-    ClerkExpressRequireAuth(),
+    // ClerkExpressRequireAuth(),
     async (req: Request<{ _id: string }>, res: Response) => {
       console.log(req.params._id);
       try {
+        if (redisClient.isOpen) {
+          const result = await redisClient.hGet("admin:details", req.params._id);
+          if (result) {
+            console.log("<Redis admin hit>")
+            res.json(JSON.parse(result));
+            return;
+          }
+        }
         const result = await sanityClient?.fetch(
           `*[_type=='admin' && _id=='${req.params._id}'][0]`
         );
+        console.log(result)
+        await redisClient.hSet("admin:details", req.params._id, JSON.stringify(result));
         res.status(200).json(result);
         return;
-      } catch (e) {
-        res.status(500).json({});
+      } catch (e: Error | any) {
+        res.status(500).json({ error: e.message });
       }
     });
 
@@ -141,7 +153,7 @@ if (cluster.isPrimary) {
   //update admin new data
   app.patch(
     "/update-info",
-    ClerkExpressRequireAuth(),
+    // ClerkExpressRequireAuth(),
     async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
 
       //now watching if record is in sanity.io else catfishing

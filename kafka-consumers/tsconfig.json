@@ -4,11 +4,12 @@
         "sourceRoot": "src",
         "sourceMap": true,
         "rootDir": "src",
-        "target": "es2020",
+        "target": "esnext",
         "module": "NodeNext",
         "noImplicitAny": true,
         "noEmit": true,
         "allowImportingTsExtensions": true,
+        "esModuleInterop":true,
         "baseUrl": ".",
         "paths": {
             "@/*":["src/*"],

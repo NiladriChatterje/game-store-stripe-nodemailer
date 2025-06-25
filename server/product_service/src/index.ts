@@ -86,7 +86,7 @@ if (cluster.isPrimary) {
     });
 
     //for all users [that's why no authentication middleware] <Completed> | Dont touch
-    app.get("/fetch-products/:category/:page", async (req: Request<{ category: string; page: number }>, res: Response) => {
+    app.get("/fetch-products/:pincode/:category/:page", async (req: Request<{ category: string; page: number, pincode: number }>, res: Response) => {
       res.setHeader('Content-Type', 'application/json');
 
       if (redisClient.isOpen) {
@@ -100,7 +100,7 @@ if (cluster.isPrimary) {
             }
             data = await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
             ...,
-            'quantity':quantity[][0].value,
+            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`);
             for (let datum of data) {
@@ -122,7 +122,7 @@ if (cluster.isPrimary) {
             data = await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]
             {
              ...,
-            'quantity':quantity[][0].value,
+          'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`);
             let deserializeDatum: ProductType;
@@ -142,7 +142,7 @@ if (cluster.isPrimary) {
             }
             data = await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
-            'quantity':quantity[][0].value,
+            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`);
             let deserializeDatum: ProductType;
@@ -163,7 +163,7 @@ if (cluster.isPrimary) {
             }
             data = await sanityClient.fetch(`*[_type=="product" && category=="toys"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
-            'quantity':quantity[][0].value,
+            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`);
             let deserializeDatum: ProductType;
@@ -184,7 +184,7 @@ if (cluster.isPrimary) {
             }
             data = await sanityClient.fetch(`*[_type=="product" && category=="clothes"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
-            'quantity':quantity[][0].value,
+            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`);
             let deserializeDatum: ProductType;
@@ -201,31 +201,31 @@ if (cluster.isPrimary) {
       switch (req.params.category) {
         case 'all': res.json(await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
-            'quantity':quantity[][0].value,
+            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`));
           break;
         case 'groceries': res.json(await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
-            'quantity':quantity[][0].value,
+           'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`));
           break;
         case 'gadgets': res.json(await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
-            'quantity':quantity[][0].value,
+            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`));
           break;
         case 'toys': res.json(await sanityClient.fetch(`*[_type=="product" && category=="toys"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
-            'quantity':quantity[][0].value,
+           'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`));
           break;
         case 'clothes': res.json(await sanityClient.fetch(`*[_type=="product" && category=="clothes"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
-            'quantity':quantity[][0].value,
+            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`));
           break;
@@ -246,7 +246,7 @@ if (cluster.isPrimary) {
         if (productId) {
           try {
             if (redisClient.isOpen) {
-              const fromRedisResult = await redisClient.hGet('products', productId)
+              const fromRedisResult = await redisClient.hGet('products:details', productId)
               if (fromRedisResult) {
                 res.send(200).json(JSON.parse(fromRedisResult));
                 return;

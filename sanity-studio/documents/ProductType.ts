@@ -6,22 +6,22 @@ export const pair = {
   type: 'object',
   fields: [
     defineField({
-      name: 'key',
-      title: 'Key',
+      name: 'pincode',
+      title: 'pincode',
       type: 'string',
       validation: Rule => Rule.required()
     }),
     defineField({
-      name: 'value',
-      title: 'Value',
-      type: 'string', // or 'number', 'boolean', etc.
+      name: 'quantity',
+      title: 'quantity',
+      type: 'number', // or 'number', 'boolean', etc.
       validation: Rule => Rule.required()
     })
   ],
   preview: {
     select: {
-      key: 'key',
-      value: 'value'
+      key: 'pincode',
+      value: 'quantity'
     },
     prepare(selection: any) {
       const { key, value } = selection

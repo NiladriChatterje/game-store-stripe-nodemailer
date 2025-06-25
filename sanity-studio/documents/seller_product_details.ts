@@ -27,6 +27,7 @@ export const RegionToProducts = defineType({
             name: 'quantity',
             title: 'quantity',
             type: 'number',
+            initialValue: 0,
             validation: rule => rule.required()
         }),
 

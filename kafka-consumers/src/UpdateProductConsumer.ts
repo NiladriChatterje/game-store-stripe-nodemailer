@@ -1,92 +1,88 @@
-import cluster from "node:cluster";
 import { EachMessagePayload, Kafka, logLevel } from "kafkajs";
-import { availableParallelism } from "node:os";
 import { createClient, SanityClient } from "@sanity/client";
 import { createClient as RedisClient } from "redis";
-import { ProductType } from "@declaration/productType";
+import type { ProductType } from "../declaration/productType.d.ts";
 import { sanityConfig } from "@utils";
 
 const kafka: Kafka = new Kafka({
     clientId: "xvstore",
     brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
-    ssl: true,
 });
 
-if (cluster.isPrimary) {
-    let i = 0;
-    while (i < availableParallelism()) {
-        cluster.fork();
-        cluster.on("exit", () => {
-            cluster.fork();
-        });
-    }
-} else {
-    async function main() {
-        const redisClient = RedisClient();
-        await redisClient.connect();
-        const sanityClient: SanityClient = createClient({
-            ...sanityConfig,
-            perspective: "published",
-        });
-        const consumer = kafka.consumer({
-            groupId: "product-update-db-save",
-        });
 
-        await consumer.connect();
-        await consumer.subscribe({ topic: "update-product-topic" });
+async function main() {
+    const redisClient = RedisClient();
+    await redisClient.connect();
+    const sanityClient: SanityClient = createClient({
+        ...sanityConfig,
+        perspective: "published",
+    });
+    const consumer = kafka.consumer({
+        groupId: "product-db-update",
+    });
 
-        async function handleEachMessages({
-            heartbeat,
-            message,
-            partition,
-            topic,
-        }: EachMessagePayload) {
-            console.log("<arrayBufferLike> : ", message.value);
+    await consumer.connect();
+    await consumer.subscribe({ topic: "update-product-topic" });
 
-            try {
-                const productPayload: ProductType = JSON.parse(
-                    message.value.toString()
-                );
+    async function handleEachMessages({
+        heartbeat,
+        message,
+        partition,
+        topic,
+    }: EachMessagePayload) {
+        console.log("<arrayBufferLike> : ", message.value);
 
-                const getQty = await sanityClient.fetch(`*[_type == 'product'
-                                && seller[]._ref match "${productPayload.seller}"
+        try {
+            const productPayload: ProductType = JSON.parse(
+                message.value.toString()
+            );
+
+            const getQty = await sanityClient.fetch(`*[_type == 'product'
                             && _id match '${productPayload._id}'][0]{
-                            "quantity": quantity[key match ${productPayload.pincode}][0].value 
-                          }`)
-                const result = await sanityClient
-                    .patch(productPayload._id)
-                    .setIfMissing({
-                        quantity: {
-                            [productPayload.pincode]: 0
-                        }
-                    }).set({
-                        quantity: {
-                            [productPayload.pincode]: productPayload.quantity + getQty.quantity
-                        }
-                    })
-                    .commit()
+                            "quantity": quantity[pincode match "${productPayload.pincode}"][0].quantity 
+                          }`);
 
-                await sanityClient.createOrReplace({
-                    _id: productPayload.seller,
-                    _type: 'seller_product_details',
-                    seller_id: productPayload.seller,
-                    product_id: productPayload._id,
-                    pincode: productPayload.pincode,
-                    quantity: productPayload.quantity + getQty.quantity
-                })
+            const result = await sanityClient
+                .patch(productPayload._id)
+                .setIfMissing({
+                    quantity: [{
+                        [productPayload.pincode]: 0
+                    }]
+                }).append(
+                    "quantity", [{
+                        [productPayload.pincode]: productPayload.quantity + getQty.quantity
+                    }]
+                )
+                .commit()
 
-                consumer.commitOffsets([
-                    { topic, partition, offset: message.offset },
-                ]);
-            } catch (error: Error | any) { }
-        }
-
-        consumer.run({
-            partitionsConsumedConcurrently: 5,
-            eachMessage: handleEachMessages,
-            autoCommit: false,
-        });
+            const seller_quantity = await sanityClient.fetch(`*[_type=='seller_product_details' 
+                    && product_id match "${productPayload._id}"
+                    && seller_id match "${productPayload.seller}"
+                    ]`);
+            const success = await sanityClient.createOrReplace({
+                _id: seller_quantity._id,
+                _type: 'seller_product_details',
+                seller_id: productPayload.seller,
+                product_id: productPayload._id,
+                pincode: productPayload.pincode,
+                quantity: productPayload.quantity + (seller_quantity?.quantity ?? 0)
+            })
+            redisClient.hset("products:details", productPayload._id, JSON.stringify({
+                ...productPayload,
+                quantity: productPayload.quantity + getQty.quantity
+            }))
+            consumer.commitOffsets([
+                { topic, partition, offset: message.offset },
+            ]);
+        } catch (error: Error | any) { }
     }
 
-    main();
+    consumer.run({
+        partitionsConsumedConcurrently: 5,
+        eachMessage: handleEachMessages,
+        autoCommit: false,
+    });
 }
+
+main();
+
