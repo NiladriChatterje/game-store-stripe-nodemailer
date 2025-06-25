@@ -156,11 +156,18 @@ if (cluster.isPrimary) {
     // ClerkExpressRequireAuth(),
     async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
 
+      if (redisClient.isOpen) {
+        if (await redisClient.hGet('admin:details', req.body._id)) {
+          next();
+          return;
+        }
+      }
       //now watching if record is in sanity.io else catfishing
       const record = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId][0]`, {
         adminId: req.body._id
       })
-      next()
+      if (record != null)
+        next()
 
       res.sendStatus(401);
     },
