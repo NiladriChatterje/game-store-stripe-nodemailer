@@ -65,7 +65,7 @@ if (cluster.isPrimary) {
   );
 
   app.patch(
-    "/update-info",
+    "/update-admin-info",
     async (req: Request, res: Response, next: NextFunction) => {
       if (req.headers.authorization?.split(" ")[1])
         next()

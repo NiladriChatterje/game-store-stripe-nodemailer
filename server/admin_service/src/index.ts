@@ -70,7 +70,13 @@ if (cluster.isPrimary) {
   const app: Express = express();
   const sanityClient: SanityClient = createClient(sanityConfig);
   const redisClient = RedisClient();
-  await redisClient.connect();
+  try {
+    await redisClient.connect();
+  } catch (e: Error | any) {
+    console.log("<error connecting redis server>");
+    console.log(e.message)
+  }
+
   app.use(cors());
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
@@ -130,7 +136,7 @@ if (cluster.isPrimary) {
       console.log(req.params._id);
       try {
         if (redisClient.isOpen) {
-          const result = await redisClient.hGet("admin:details", req.params._id);
+          const result = await redisClient.hGet("hashSet:admin:details", req.params._id);
           if (result) {
             console.log("<Redis admin hit>")
             res.json(JSON.parse(result));
@@ -141,7 +147,7 @@ if (cluster.isPrimary) {
           `*[_type=='admin' && _id=='${req.params._id}'][0]`
         );
         console.log(result)
-        await redisClient.hSet("admin:details", req.params._id, JSON.stringify(result));
+        await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(result));
         res.status(200).json(result);
         return;
       } catch (e: Error | any) {
@@ -152,12 +158,12 @@ if (cluster.isPrimary) {
 
   //update admin new data
   app.patch(
-    "/update-info",
+    "/update-admin-info",
     // ClerkExpressRequireAuth(),
     async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
 
       if (redisClient.isOpen) {
-        if (await redisClient.hGet('admin:details', req.body._id)) {
+        if (await redisClient.sIsMember('set:admin:details', req.body._id)) {
           next();
           return;
         }
@@ -165,9 +171,13 @@ if (cluster.isPrimary) {
       //now watching if record is in sanity.io else catfishing
       const record = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId][0]`, {
         adminId: req.body._id
-      })
-      if (record != null)
+      });
+
+      if (record != null) {
+        await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
+        await redisClient.sAdd('set:admin:details', req.body._id)
         next()
+      }
 
       res.sendStatus(401);
     },
@@ -191,7 +201,9 @@ if (cluster.isPrimary) {
       try {
         const sanityClient: SanityClient = createClient(sanityConfig);
         const result = await sanityClient.fetch(
-          `[_type=="admin" && _id=="${req.params._id}"]{productReferenceAfterListing}`,
+          `*[_type=="admin" && _id==$admin_id]{productReferenceAfterListing}`, {
+          admin_id: req.params._id
+        }
         )
         res.status(200).send(result);
       } catch (error) {

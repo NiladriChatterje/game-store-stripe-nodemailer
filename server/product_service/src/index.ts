@@ -68,7 +68,7 @@ if (cluster.isPrimary) {
         return;
       }
       let result;
-      result = (await redisClient.get(token as unknown as string))?.length;
+      result = (await redisClient.sIsMember(`set:admin:details`, token as unknown as string));
       if (result) {
         res.status(200).json(result);
         next();
@@ -267,7 +267,7 @@ if (cluster.isPrimary) {
     //post to kafka topic [product-topic] to create the product
     app.post(
       "/add-product",
-      ClerkExpressRequireAuth(),
+      // ClerkExpressRequireAuth(),
       authMiddleware,
       async (req: Request<{}, {}, ProductType>, res: Response) => {
         const worker = new Worker("./dist/AddProductData.js", {
@@ -282,7 +282,7 @@ if (cluster.isPrimary) {
 
     //patch to update same product
     app.patch("/update-product",
-      ClerkExpressRequireAuth(),
+      // ClerkExpressRequireAuth(),
       authMiddleware,
       async (req: Request<{}, {}, ProductType>, res: Response) => {
         const { _id, imagesBase64, } = req.body;

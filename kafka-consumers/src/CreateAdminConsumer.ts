@@ -1,7 +1,7 @@
 import { createClient, SanityClient } from "@sanity/client";
 import { EachMessagePayload, Kafka } from "kafkajs";
-import { sanityConfig } from "./utils";
-import { AdminFieldsType } from "@declaration/AdminFieldType";
+import { sanityConfig } from "./utils/index.ts";
+import type { AdminFieldsType } from "@declaration/AdminFieldType.d.ts";
 import { createClient as redisClient } from "redis";
 
 async function createAdmin() {
@@ -11,7 +11,7 @@ async function createAdmin() {
   });
 
   const redisC = redisClient();
-
+  await redisC.connect()
   const consumer = kafka.consumer({
     groupId: "admin-record",
     retry: { retries: 6 },
@@ -49,13 +49,15 @@ async function createAdmin() {
           },
         })
         .then(async (onfulfilled) => {
+
           console.log(`<< data ${onfulfilled.username} written >>`);
           consumer
             .commitOffsets([{ topic, offset: message.offset, partition }])
             .then(async () => {
               await heartbeat(); // to let the broker know that the consumer in the group is still alive
             });
-          redisC.set(onfulfilled.username, onfulfilled.username);
+          await redisC.hSet(`hashSet:admin:details`, onfulfilled._id, JSON.stringify(onfulfilled));
+          await redisC.sadd(`set:admin:details`, onfulfilled.username);
         })
         .catch((err) => console.log(err));
   }
