@@ -4,7 +4,8 @@
   "main": "./dist/src/index.js",
   "type": "module",
   "dependencies": {
-    "@clerk/clerk-sdk-node": "^4.13.23",
+    "@clerk/backend": "^2.3.0",
+    "@clerk/types": "^4.62.0",
     "@sanity/cli": "^3.0.6",
     "@sanity/client": "^6.22.5",
     "@types/cors": "^2.8.17",
@@ -14,12 +15,14 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
+    "http": "^0.0.1-security",
     "kafkajs": "^2.2.4",
     "nodemailer": "^6.9.1",
     "razorpay": "^2.9.5",
     "redis": "^5.5.6",
     "shortid": "^2.2.16",
-    "tsx": "^4.19.1"
+    "tsx": "^4.19.1",
+    "url": "^0.11.4"
   },
   "scripts": {
     "build": "npx tspc",
@@ -38,7 +41,7 @@
     "@types/express": "^5.0.0",
     "@types/module-alias": "^2.0.4",
     "@types/multer": "^1.4.12",
-    "@types/node": "^22.7.5",
+    "@types/node": "^22.15.34",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",

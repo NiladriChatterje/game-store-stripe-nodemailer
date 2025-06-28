@@ -10,11 +10,19 @@ import { createClient as RedisClient } from "redis";
 import { sanityConfig } from './utils/index.js';
 import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 import { createTransport } from "nodemailer";
-import { ClerkExpressRequireAuth } from "@clerk/clerk-sdk-node";
+import { ClerkClient, verifyToken } from "@clerk/backend";
 import { spawn } from 'node:child_process'
+import { JwtPayload } from "@clerk/types";
 
 
 dotenv.config();
+
+declare module "express-serve-static-core" {
+  interface Request {
+    auth: NonNullable<JwtPayload | undefined>;
+    userId: string;
+  }
+}
 
 if (cluster.isPrimary) {
   let old_child_process: any[] = []
@@ -86,6 +94,39 @@ if (cluster.isPrimary) {
     next();
   });
 
+  //#region clerk_middleware
+
+  const verifyClerkToken = async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
+    try {
+      // Get token from Authorization header
+      const token = req.headers.authorization?.split(' ')[1];
+
+      if (!token) {
+        res.status(401).json({ error: 'No token provided' });
+        return;
+      }
+
+
+      // Verify the token
+      const payload = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY,
+        clockSkewInMs: 60000
+      });
+
+      // Add user info to request object
+      req.auth = payload;
+
+      next();
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      res.status(403).json({ error: 'Invalid token' });
+      return;
+    }
+  };
+  //#endregion
+
+
+  //#region ENDPOINTS
   //ping self to keep server awake
   app.get("/", (req: Request, res: Response) => {
     res.end("pinged!");
@@ -94,7 +135,7 @@ if (cluster.isPrimary) {
   //admin creation [kafka interaction]
   app.post(
     "/create-admin",
-    ClerkExpressRequireAuth(),
+    verifyClerkToken,
     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
       const value = req.body;
 
@@ -131,7 +172,7 @@ if (cluster.isPrimary) {
   //get admin credential
   app.get(
     "/fetch-admin-data/:_id",
-    ClerkExpressRequireAuth(),
+    verifyClerkToken,
     async (req: Request<{ _id: string }>, res: Response) => {
       console.log(req.params._id);
       try {
@@ -147,8 +188,11 @@ if (cluster.isPrimary) {
           `*[_type=='admin' && _id=='${req.params._id}'][0]`
         );
         console.log(result)
-        await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(result));
         res.status(200).json(result);
+        if (req.params._id.length > 0) {
+          await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(result));
+          await redisClient.sAdd("set:admin:id", req.params._id)
+        }
         return;
       } catch (e: Error | any) {
         res.status(500).json({ error: e.message });
@@ -159,11 +203,11 @@ if (cluster.isPrimary) {
   //update admin new data
   app.patch(
     "/update-admin-info",
-    ClerkExpressRequireAuth(),
+    verifyClerkToken,
     async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
 
       if (redisClient.isOpen) {
-        if (await redisClient.sIsMember('set:admin:details', req.body._id)) {
+        if (await redisClient.sIsMember('set:admin:id', req.body._id)) {
           next();
           return;
         }
@@ -175,7 +219,7 @@ if (cluster.isPrimary) {
 
       if (record != null) {
         await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
-        await redisClient.sAdd('set:admin:details', req.body._id)
+        await redisClient.sAdd('set:admin:id', req.body._id)
         next()
       }
 
@@ -197,7 +241,7 @@ if (cluster.isPrimary) {
   //get product list uploaded by an admin
   app.get(
     "/:_id/product-list",
-    ClerkExpressRequireAuth(),
+    verifyClerkToken,
     async (req: Request<{ _id: string }>, res: Response) => {
       try {
         const sanityClient: SanityClient = createClient(sanityConfig);
@@ -236,6 +280,8 @@ if (cluster.isPrimary) {
 
     res.send("SMS sent");
   });
+  //#endregion 
+
 
   app.listen(process.env.PORT ?? 5003, () =>
     console.log("listening on PORT:" + process.env.PORT)

@@ -57,7 +57,7 @@ async function createAdmin() {
               await heartbeat(); // to let the broker know that the consumer in the group is still alive
             });
           await redisC.hSet(`hashSet:admin:details`, onfulfilled._id, JSON.stringify(onfulfilled));
-          await redisC.sadd(`set:admin:details`, onfulfilled.username);
+          await redisC.sadd(`set:admin:id`, onfulfilled.username);
         })
         .catch((err) => console.log(err));
   }

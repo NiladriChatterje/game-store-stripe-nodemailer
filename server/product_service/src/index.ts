@@ -68,7 +68,7 @@ if (cluster.isPrimary) {
         return;
       }
       let result;
-      result = (await redisClient.sIsMember(`set:admin:details`, token as unknown as string));
+      result = (await redisClient.sIsMember(`set:admin:id`, token as unknown as string));
       if (result) {
         res.status(200).json(result);
         next();
