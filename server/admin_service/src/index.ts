@@ -17,12 +17,14 @@ import { JwtPayload } from "@clerk/types";
 
 dotenv.config();
 
+//#region custom express.Request definition
 declare module "express-serve-static-core" {
   interface Request {
     auth: NonNullable<JwtPayload | undefined>;
     userId: string;
   }
 }
+//#endregion
 
 if (cluster.isPrimary) {
   let old_child_process: any[] = []
@@ -95,7 +97,6 @@ if (cluster.isPrimary) {
   });
 
   //#region clerk_middleware
-
   const verifyClerkToken = async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
     try {
       // Get token from Authorization header

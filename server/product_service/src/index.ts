@@ -5,14 +5,53 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { availableParallelism } from "os";
 import type { ProductType } from "@declaration/index.d.ts";
-import type { AdminFieldsType } from "@declaration/AdminFieldType.d.ts";
 import { sanityConfig } from "@utils/index.js";
 import { createClient as SanityClient } from "@sanity/client";
 import { createClient as RedisClient, RedisClientType } from "redis";
-import { ClerkExpressRequireAuth } from "@clerk/clerk-sdk-node";
 import { spawn } from "child_process";
 import { Kafka } from "kafkajs";
+import { JwtPayload } from "@clerk/types";
+import { verifyToken } from "@clerk/backend";
 dotenv.config();
+
+declare global {
+  namespace Express {
+    interface Request {
+      auth: NonNullable<JwtPayload | undefined>;
+      adminId: string;
+    }
+  }
+}
+
+//#region clerk_middleware
+const verifyClerkToken = async (req: Request<{}, {}, ProductType>, res: Response, next: NextFunction) => {
+  try {
+    // Get token from Authorization header
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      res.status(401).json({ error: 'No token provided' });
+      return;
+    }
+
+
+    // Verify the token
+    const payload = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+      clockSkewInMs: 60000
+    });
+
+    // Add user info to request object
+    req.auth = payload;
+
+    next();
+  } catch (error) {
+    console.error('Token verification failed:', error);
+    res.status(403).json({ error: 'Invalid token' });
+    return;
+  }
+};
+//#endregion
 
 if (cluster.isPrimary) {
 
@@ -267,7 +306,7 @@ if (cluster.isPrimary) {
     //post to kafka topic [product-topic] to create the product
     app.post(
       "/add-product",
-      ClerkExpressRequireAuth(),
+      verifyClerkToken,
       authMiddleware,
       async (req: Request<{}, {}, ProductType>, res: Response) => {
         const worker = new Worker("./dist/AddProductData.js", {
@@ -282,7 +321,7 @@ if (cluster.isPrimary) {
 
     //patch to update same product
     app.patch("/update-product",
-      ClerkExpressRequireAuth(),
+      verifyClerkToken,
       authMiddleware,
       async (req: Request<{}, {}, ProductType>, res: Response) => {
         const { _id, imagesBase64, } = req.body;
