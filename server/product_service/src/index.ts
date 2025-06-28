@@ -23,35 +23,6 @@ declare global {
   }
 }
 
-//#region clerk_middleware
-const verifyClerkToken = async (req: Request<{}, {}, ProductType>, res: Response, next: NextFunction) => {
-  try {
-    // Get token from Authorization header
-    const token = req.headers.authorization?.split(' ')[1];
-
-    if (!token) {
-      res.status(401).json({ error: 'No token provided' });
-      return;
-    }
-
-
-    // Verify the token
-    const payload = await verifyToken(token, {
-      secretKey: process.env.CLERK_SECRET_KEY,
-      clockSkewInMs: 60000
-    });
-
-    // Add user info to request object
-    req.auth = payload;
-
-    next();
-  } catch (error) {
-    console.error('Token verification failed:', error);
-    res.status(403).json({ error: 'Invalid token' });
-    return;
-  }
-};
-//#endregion
 
 if (cluster.isPrimary) {
 
@@ -82,15 +53,63 @@ if (cluster.isPrimary) {
     });
   }
 } else {
+  const sanityClient = SanityClient(sanityConfig);
+  const redisClient: RedisClientType = RedisClient();
+  //#region clerk_middleware
+  const verifyClerkToken = async (req: Request<{}, {}, ProductType>, res: Response, next: NextFunction) => {
+    try {
+      // Get token from Authorization header
+      const token = req.headers.authorization?.split(' ')[1];
+      if (!token) {
+        res.status(401).json({ error: 'No token provided' });
+        return;
+      }
+      // Verify the token
+      const payload = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY,
+        clockSkewInMs: 60000
+      });
+      // Add user info to request object
+      req.auth = payload;
+      next();
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      res.status(403).json({ error: 'Invalid token' });
+      return;
+    }
+  };
+
+
+  async function authMiddleware(req: Request<{}, {}, any>, res: Response, next: NextFunction) {
+    const token = req.headers['x-admin-id'];
+    if (!token) {
+      res.status(401).send('Missing token!');
+      return;
+    }
+    let result;
+    result = (await redisClient.sIsMember(`set:admin:id`, token as unknown as string));
+    if (result) {
+      res.status(200).json(result);
+      next();
+      return;
+    }
+    result = await sanityClient.fetch(`count(*[_type=='admin' && _id=='${token as unknown as string}'])`)
+
+    if (result && result > 0) {
+      await redisClient.sAdd(`set:admin:id`, token);
+      next();
+    }
+    else
+      res.status(403).send('Unauthorized token!');
+  }
+  //#endregion
 
   async function main() {
     const app: Express = express();
-    const sanityClient = SanityClient(sanityConfig);
     const kafka: Kafka = new Kafka({
       clientId: 'xv-store',
       brokers: ['localhost:9092', 'localhost:9093', 'localhost:9094']
     });
-    const redisClient: RedisClientType = RedisClient();
     await redisClient.connect();
     app.use(cors());
     app.use(express.json({ limit: "25mb" }));
@@ -100,25 +119,7 @@ if (cluster.isPrimary) {
       next();
     });
 
-    async function authMiddleware(req: Request<{}, {}, any>, res: Response, next: NextFunction) {
-      const token = req.headers['x-admin-id'];
-      if (!token) {
-        res.status(401).send('Missing token!');
-        return;
-      }
-      let result;
-      result = (await redisClient.sIsMember(`set:admin:id`, token as unknown as string));
-      if (result) {
-        res.status(200).json(result);
-        next();
-        return;
-      }
-      result = await sanityClient.fetch(`count(*[_type=='admin' && _id=='${token as unknown as string}'])`)
-      if (result && result > 0)
-        next();
-      else
-        res.status(403).send('Unauthorized token!');
-    }
+
 
     app.get("/", async (req: Request, res: Response) => {
       res.end("pinged!");
@@ -131,7 +132,7 @@ if (cluster.isPrimary) {
       if (redisClient.isOpen) {
         switch (req.params.category) {
           case 'all': {
-            let data: string[] = (await redisClient.hVals('products:all')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
+            let data: string[] = (await redisClient.hVals(`products:all:${req.params.pincode}`)).slice((req.params.page - 1) * 10, (req.params.page) * 10);
             if (data.length > 0) {
               console.log(`<redis hit>`)
               res.json(data.map(item => JSON.parse(item)));
@@ -142,23 +143,24 @@ if (cluster.isPrimary) {
             'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`);
+            console.log(data)
             for (let datum of data) {
               const deserializedData = datum as unknown as ProductType;
-              redisClient.hSet('products:all', deserializedData._id, JSON.stringify(datum));
+              redisClient.hSet(`products:all:${req.params.pincode}`, deserializedData._id, JSON.stringify(datum));
             }
 
             res.json(data);
             return;
           }
 
-          case 'groceries': {
-            let data: string[] = (await redisClient.hVals('products:groceries')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
+          default: {
+            let data: string[] = (await redisClient.hVals(`products:${req.params.category}:${req.params.pincode}`)).slice((req.params.page - 1) * 10, (req.params.page) * 10);
             if (data.length > 0) {
               console.log(`<redis hit>`)
               res.json(data.map(item => JSON.parse(item)));
               return;
             }
-            data = await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]
+            data = await sanityClient.fetch(`*[_type=="product" && category=="${req.params.category}"][${(req.params.page - 1) * 10}...${req.params.page * 10}]
             {
              ...,
           'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
@@ -167,69 +169,7 @@ if (cluster.isPrimary) {
             let deserializeDatum: ProductType;
             for (let datum of data) {
               deserializeDatum = datum as unknown as ProductType;
-              redisClient.hSet("products:groceries", deserializeDatum._id, JSON.stringify(datum));
-            }
-            res.json(data);
-            return;
-          }
-          case 'gadgets': {
-            let data: string[] = (await redisClient.hVals('products:gadgets')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
-            if (data.length > 0) {
-              console.log(`<redis hit>`)
-              res.json(data.map(item => JSON.parse(item)));
-              return;
-            }
-            data = await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-             ...,
-            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`);
-            let deserializeDatum: ProductType;
-            for (let datum of data) {
-              deserializeDatum = datum as unknown as ProductType;
-              redisClient.hSet("products:gadgets", deserializeDatum._id, JSON.parse(datum));
-            }
-            res.json(data);
-            return;
-          }
-
-          case 'toys': {
-            let data: string[] = (await redisClient.hVals('products:toys')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
-            if (data.length > 0) {
-              console.log(`<redis hit>`)
-              res.json(data.map(item => JSON.parse(item)));
-              return;
-            }
-            data = await sanityClient.fetch(`*[_type=="product" && category=="toys"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-             ...,
-            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`);
-            let deserializeDatum: ProductType;
-            for (let datum of data) {
-              deserializeDatum = datum as unknown as ProductType;
-              redisClient.hSet("products:toys", deserializeDatum._id, JSON.parse(datum));
-            }
-            res.json(data);
-            return;
-          }
-
-          case 'clothes': {
-            let data: string[] = (await redisClient.hVals('products:clothes')).slice((req.params.page - 1) * 10, (req.params.page) * 10);
-            if (data.length > 0) {
-              console.log(`<redis hit>`)
-              res.json(data.map(item => JSON.parse(item)));
-              return;
-            }
-            data = await sanityClient.fetch(`*[_type=="product" && category=="clothes"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-             ...,
-            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`);
-            let deserializeDatum: ProductType;
-            for (let datum of data) {
-              deserializeDatum = datum as unknown as ProductType;
-              redisClient.hSet("products:clothes", deserializeDatum._id, JSON.parse(datum));
+              redisClient.hSet(`products:${req.params.category}:${req.params.pincode}`, deserializeDatum._id, JSON.stringify(datum));
             }
             res.json(data);
             return;
@@ -244,31 +184,12 @@ if (cluster.isPrimary) {
             'seller':null
             }`));
           break;
-        case 'groceries': res.json(await sanityClient.fetch(`*[_type=="product" && category=="groceries"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
+        default: res.json(await sanityClient.fetch(`*[_type=="product" && category=="${req.params.category}"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
              ...,
            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
             'seller':null
             }`));
           break;
-        case 'gadgets': res.json(await sanityClient.fetch(`*[_type=="product" && category=="gadgets"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-             ...,
-            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`));
-          break;
-        case 'toys': res.json(await sanityClient.fetch(`*[_type=="product" && category=="toys"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-             ...,
-           'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`));
-          break;
-        case 'clothes': res.json(await sanityClient.fetch(`*[_type=="product" && category=="clothes"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-             ...,
-            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`));
-          break;
-        default: res.json([]);
       }
     });
 
