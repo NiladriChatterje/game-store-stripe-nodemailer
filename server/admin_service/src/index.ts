@@ -94,7 +94,7 @@ if (cluster.isPrimary) {
   //admin creation [kafka interaction]
   app.post(
     "/create-admin",
-    // ClerkExpressRequireAuth(),
+    ClerkExpressRequireAuth(),
     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
       const value = req.body;
 
@@ -131,7 +131,7 @@ if (cluster.isPrimary) {
   //get admin credential
   app.get(
     "/fetch-admin-data/:_id",
-    // ClerkExpressRequireAuth(),
+    ClerkExpressRequireAuth(),
     async (req: Request<{ _id: string }>, res: Response) => {
       console.log(req.params._id);
       try {
@@ -159,7 +159,7 @@ if (cluster.isPrimary) {
   //update admin new data
   app.patch(
     "/update-admin-info",
-    // ClerkExpressRequireAuth(),
+    ClerkExpressRequireAuth(),
     async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
 
       if (redisClient.isOpen) {
@@ -197,6 +197,7 @@ if (cluster.isPrimary) {
   //get product list uploaded by an admin
   app.get(
     "/:_id/product-list",
+    ClerkExpressRequireAuth(),
     async (req: Request<{ _id: string }>, res: Response) => {
       try {
         const sanityClient: SanityClient = createClient(sanityConfig);
