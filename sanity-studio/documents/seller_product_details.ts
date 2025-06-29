@@ -30,6 +30,12 @@ export const RegionToProducts = defineType({
             initialValue: 0,
             validation: rule => rule.required()
         }),
+        defineField({
+            name: 'geoPoint',
+            title: 'GeoPoint',
+            type: 'geopoint',
+            validation: rule => rule.required()
+        }),
 
     ]
 })

@@ -254,7 +254,6 @@ if (cluster.isPrimary) {
       verifyClerkToken,
       authMiddleware,
       async (req: Request<{}, {}, ProductType>, res: Response) => {
-        const { _id, imagesBase64, } = req.body;
         const producer = kafka.producer();
         try {
           await producer.connect();

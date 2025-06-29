@@ -65,7 +65,11 @@ async function main() {
                 seller_id: productPayload.seller,
                 product_id: productPayload._id,
                 pincode: productPayload.pincode,
-                quantity: productPayload.quantity + (seller_quantity?.quantity ?? 0)
+                quantity: productPayload.quantity + (seller_quantity?.quantity ?? 0),
+                geoPoint: {
+                    lat: productPayload?.geoPoint.lat,
+                    lng: productPayload?.geoPoint.lng
+                }
             })
             redisClient.hset("products:details", productPayload._id, JSON.stringify({
                 ...productPayload,

@@ -63,12 +63,12 @@ if (cluster.isPrimary) {
         console.log(queryEmbedding)
         let productEmbeddings: Map<{ toString: {}; }, { toString: {}; }> | {
           toString: {};
-        }[] = (await redisC.hGetAll("embeddings"))
+        }[] = (await redisC.hGetAll("product:embeddings"))//in product:embeddings hashset, product_id => embeddings(number[])
         if (productEmbeddings.keys()) {
           let resultEmbeddings = await sanityClient?.fetch(`*[_type=='productEmbeddings']`);
           productEmbeddings = resultEmbeddings?.map(item => [item.product_id, item.embeddings])
           const ProductId_distance_arr: [string, number][] = knn(productEmbeddings, queryEmbedding);
-
+          console.log(ProductId_distance_arr)
         }
       } catch (error) {
         console.log("<<Model error>>")

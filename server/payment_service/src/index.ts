@@ -7,10 +7,19 @@ import { availableParallelism } from 'os'
 import { Kafka, Producer } from 'kafkajs'
 import { spawn } from 'child_process'
 import { type Subscription } from '@declaration/index'
-import { ClerkExpressRequireAuth, clerkClient } from '@clerk/clerk-sdk-node'
+import { ClerkClient, verifyToken } from '@clerk/backend'
 import Razorpay from 'razorpay'
 import shortid from 'shortid'
+import { JwtPayload } from '@clerk/types'
 dotenv.config()
+
+declare global {
+    namespace Express {
+        interface Request {
+            auth: NonNullable<JwtPayload | undefined>
+        }
+    }
+}
 
 if (cluster.isPrimary) {
     let old_child_process: any[] = []
@@ -46,6 +55,29 @@ if (cluster.isPrimary) {
         brokers: ['localhost:9092', 'localhost:9093', 'localhost:9094']
     })
 
+    const verifyClerkToken = async (req: Request<{}, {}, any>, res: Response, next: NextFunction) => {
+        try {
+            // Get token from Authorization header
+            const token = req.headers.authorization?.split(' ')[1];
+            if (!token) {
+                res.status(401).json({ error: 'No token provided' });
+                return;
+            }
+            // Verify the token
+            const payload = await verifyToken(token, {
+                secretKey: process.env.CLERK_SECRET_KEY,
+                clockSkewInMs: 60000
+            });
+            // Add user info to request object
+            req.auth = payload;
+            next();
+        } catch (error) {
+            console.error('Token verification failed:', error);
+            res.status(403).json({ error: 'Invalid token' });
+            return;
+        }
+    };
+
     app.use(cors())
     app.use(express.json({ limit: '25mb' }))
     app.use(express.urlencoded({ extended: true, limit: '25mb' }))
@@ -59,7 +91,7 @@ if (cluster.isPrimary) {
     })
 
     app.post('/razorpay',
-        ClerkExpressRequireAuth() as any,
+        verifyClerkToken,
         async (req: Request, res: Response) => {
             const { price, currency } = req.body
             console.log(price)
@@ -90,7 +122,7 @@ if (cluster.isPrimary) {
 
 
     app.post('/admin-subscription',
-        ClerkExpressRequireAuth() as any,
+        verifyClerkToken,
         async (req: Request<{}, {}, { _id: string, subscription: Subscription }>, res: Response, next: NextFunction) => {
 
             next()
@@ -117,9 +149,10 @@ if (cluster.isPrimary) {
 
     //put orders in the kafka
     app.put('/user-order',
-        ClerkExpressRequireAuth() as any,
+        verifyClerkToken,
         async (req: Request, res: Response, next: NextFunction) => {
-            res.send(await clerkClient.users.getUserList())
+            const userId = req.headers['x-user-id']
+
         });
 
 

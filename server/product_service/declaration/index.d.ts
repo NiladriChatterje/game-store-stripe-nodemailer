@@ -12,6 +12,10 @@ export declare type ProductType = {
     discountPercentage: number;
     pdtPrice: number
   };
+  geoPoint?: {
+    lat: number;
+    lng: number
+  }
   currency?: currency;
   imagesBase64?: { size: number; extension: string; base64: string }[];
   image?: File[];

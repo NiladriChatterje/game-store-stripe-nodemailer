@@ -32,7 +32,8 @@ if (cluster.isPrimary) {
 
   const sanityClient = SanityClient(sanityConfig);
 
-  // const redisClient = RedisClient();
+  const redisClient = RedisClient();
+  await redisClient.connect();
   async function main() {
     const consumer = kafka.consumer({
       groupId: "product-embedding",
@@ -54,25 +55,25 @@ if (cluster.isPrimary) {
         const productPayload: ProductType = JSON.parse(message.value.toString());
         console.log(`product payload :`, productPayload);
 
-        // const splitter = new RecursiveCharacterTextSplitter({
-        //   chunkSize: 1024,
-        // });
+        const splitter = new RecursiveCharacterTextSplitter({
+          chunkSize: 1024,
+        });
 
 
-        // splitter.splitText(productPayload.productDescription + '\n' +
-        //   productPayload.keywords.map(item => item + ', '))
-        //   .then(async onfulfilled => {
-        //     const embeddings = await embeddingModel
-        //       .embedQuery(onfulfilled.join(" "));
+        splitter.splitText(productPayload.productDescription + '\n keywords: ' +
+          productPayload.keywords.map(item => item + ', '))
+          .then(async onfulfilled => {
+            const embeddings = await embeddingModel
+              .embedQuery(onfulfilled.join(" "));
 
-        //     sanityClient?.createIfNotExists({
-        //       _id: productPayload._id,
-        //       _type: "productEmbeddings",
-        //       embeddings
-        //     })
-        //     console.log(embeddings)
-        //     redisClient.hSet("embeddings", productPayload._id, JSON.stringify(embeddings))
-        //   });
+            sanityClient?.createIfNotExists({
+              _id: productPayload._id,
+              _type: "productEmbeddings",
+              embeddings
+            })
+            console.log(embeddings)
+            redisClient.hSet("product:embeddings", productPayload._id, JSON.stringify(embeddings))
+          });
 
 
       } catch (error: Error | any) {
