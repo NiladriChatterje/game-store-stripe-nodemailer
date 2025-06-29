@@ -101,22 +101,16 @@ if (cluster.isPrimary) {
     try {
       // Get token from Authorization header
       const token = req.headers.authorization?.split(' ')[1];
-
       if (!token) {
         res.status(401).json({ error: 'No token provided' });
         return;
       }
-
-
-      // Verify the token
       const payload = await verifyToken(token, {
         secretKey: process.env.CLERK_SECRET_KEY,
         clockSkewInMs: 60000
       });
 
-      // Add user info to request object
       req.auth = payload;
-
       next();
     } catch (error) {
       console.error('Token verification failed:', error);
@@ -170,7 +164,7 @@ if (cluster.isPrimary) {
   );
 
 
-  //get admin credential
+  //get admin credential [redis + sanity interaction]
   app.get(
     "/fetch-admin-data/:_id",
     verifyClerkToken,
@@ -206,7 +200,6 @@ if (cluster.isPrimary) {
     "/update-admin-info",
     verifyClerkToken,
     async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
-
       if (redisClient.isOpen) {
         if (await redisClient.sIsMember('set:admin:id', req.body._id)) {
           next();
@@ -219,9 +212,12 @@ if (cluster.isPrimary) {
       });
 
       if (record != null) {
-        await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
-        await redisClient.sAdd('set:admin:id', req.body._id)
-        next()
+        if (redisClient.isOpen) {
+          await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
+          await redisClient.sAdd('set:admin:id', req.body._id)
+        }
+        next();
+        return;
       }
 
       res.sendStatus(401);
@@ -239,12 +235,15 @@ if (cluster.isPrimary) {
     }
   );
 
-  //get product list uploaded by an admin
+  //get product list uploaded by an admin [redis + sanity]
   app.get(
     "/:_id/product-list",
     verifyClerkToken,
     async (req: Request<{ _id: string }>, res: Response) => {
       try {
+        if (redisClient.isOpen) {
+          const resultFromRedis = await redisClient.lRange(`productList:admin:${req.params._id}`, 0, -1);
+        }
         const sanityClient: SanityClient = createClient(sanityConfig);
         const result = await sanityClient.fetch(
           `*[_type=="admin" && _id==$admin_id]{productReferenceAfterListing}`, {
