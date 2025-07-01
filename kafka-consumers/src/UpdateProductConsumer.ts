@@ -51,8 +51,8 @@ async function main() {
                           }`);
 
             if (getQtyOnPincode._id.length > 0) {
-                if (getQtyOnPincode?.quantityObj?.pincode != productPayload?.pincode) {
-                    const result2 = await sanityClient
+                if (getQtyOnPincode?.quantityObj?.pincode == null) {
+                    const result = await sanityClient
                         .patch(productPayload._id)
                         .set({
                             productName: productPayload?.productName,
@@ -71,17 +71,43 @@ async function main() {
                         })
                         .append(
                             "quantity", [{
-                                pincode: '700155', quantity: productPayload.quantity,
+                                pincode: productPayload.pincode, quantity: productPayload.quantity,
                                 _key: uuid()
                             }]
                         )
                         .commit();
 
-                    console.log(`result after appending new pincode:`, result2);
+                    console.log(`result after appending new pincode:`, result);
                 }
                 else {
                     //if record was found update the particular document in the array with extra quantity
+                    const result = await sanityClient
+                        .patch(productPayload._id)
+                        .set({
+                            productName: productPayload?.productName,
+                            imagesBase64: productPayload.imagesBase64,
+                            eanUpcIsbnGtinAsinType: productPayload.eanUpcIsbnGtinAsinType,
+                            eanUpcNumber: productPayload.eanUpcNumber,
+                            category: productPayload.category,
+                            modelNumber: productPayload.modelNumber,
+                            productDescription: productPayload.productDescription,
+                            price: {
+                                pdtPrice: productPayload.price.pdtPrice,
+                                discountPercentage: productPayload.price.discountPercentage,
+                                currency: productPayload?.price.currency
+                            },
+                            keywords: productPayload.keywords
+                        })
+                        .insert('replace',
+                            `quantity[pincode=="${productPayload.pincode}"]`, [{
+                                pincode: productPayload.pincode,
+                                quantity: productPayload.quantity,
+                                _key: uuid()
+                            }]
+                        )
+                        .commit();
 
+                    console.log(`result after updating quantity of a pincode:`, result);
                 }
             }
 
