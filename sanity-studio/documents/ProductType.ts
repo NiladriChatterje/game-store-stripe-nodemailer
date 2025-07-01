@@ -80,7 +80,7 @@ export const ProductType = defineType({
     }),
 
     defineField({
-      name: 'eanUpcIsbnGtinAsinNumber',
+      name: 'eanUpcNumber',
       title: 'EAN_UPC_ISBN_GTIN Number',
       type: 'string',
       description: 'To uniquely identify every product globally',

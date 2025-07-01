@@ -3,6 +3,7 @@ import { createClient, SanityClient } from "@sanity/client";
 import { createClient as RedisClient } from "redis";
 import type { ProductType } from "../declaration/productType.d.ts";
 import { sanityConfig } from "@utils";
+import { uuidv7 as uuid } from 'uuidv7'
 
 const kafka: Kafka = new Kafka({
     clientId: "xvstore",
@@ -37,28 +38,57 @@ async function main() {
                 message.value.toString()
             );
 
-            const getQty = await sanityClient.fetch(`*[_type == 'product'
+            type QuantityObj = {
+                _id: string;
+                quantityObj?:
+                { quantity: number; _key: string; _type: string, pincode: string }
+            }
+
+            const getQtyOnPincode: QuantityObj = await sanityClient.fetch(`*[_type == 'product'
                             && _id match '${productPayload._id}'][0]{
-                            "quantity": quantity[pincode match "${productPayload.pincode}"][0].quantity 
+                            _id,
+                            "quantityObj": quantity[pincode match "${productPayload.pincode}"][0] 
                           }`);
 
-            const result = await sanityClient
-                .patch(productPayload._id)
-                .setIfMissing({
-                    quantity: [{
-                        [productPayload.pincode]: 0
-                    }]
-                }).append(
-                    "quantity", [{
-                        [productPayload.pincode]: productPayload.quantity + getQty.quantity
-                    }]
-                )
-                .commit()
+            if (getQtyOnPincode._id.length > 0) {
+                if (getQtyOnPincode?.quantityObj?.pincode != productPayload?.pincode) {
+                    const result2 = await sanityClient
+                        .patch(productPayload._id)
+                        .set({
+                            productName: productPayload?.productName,
+                            imagesBase64: productPayload.imagesBase64,
+                            eanUpcIsbnGtinAsinType: productPayload.eanUpcIsbnGtinAsinType,
+                            eanUpcNumber: productPayload.eanUpcNumber,
+                            category: productPayload.category,
+                            modelNumber: productPayload.modelNumber,
+                            productDescription: productPayload.productDescription,
+                            price: {
+                                pdtPrice: productPayload.price.pdtPrice,
+                                discountPercentage: productPayload.price.discountPercentage,
+                                currency: productPayload?.price.currency
+                            },
+                            keywords: productPayload.keywords
+                        })
+                        .append(
+                            "quantity", [{
+                                pincode: '700155', quantity: productPayload.quantity,
+                                _key: uuid()
+                            }]
+                        )
+                        .commit();
+
+                    console.log(`result after appending new pincode:`, result2);
+                }
+                else {
+                    //if record was found update the particular document in the array with extra quantity
+
+                }
+            }
 
             const seller_quantity = await sanityClient.fetch(`*[_type=='seller_product_details' 
                     && product_id match "${productPayload._id}"
                     && seller_id match "${productPayload.seller}"
-                    ]`);
+                    ][0]`);
             const success = await sanityClient.createOrReplace({
                 _id: seller_quantity._id,
                 _type: 'seller_product_details',
@@ -73,7 +103,7 @@ async function main() {
             })
             redisClient.hset("products:details", productPayload._id, JSON.stringify({
                 ...productPayload,
-                quantity: productPayload.quantity + getQty.quantity
+                quantity: productPayload.quantity + (getQtyOnPincode?.quantityObj?.quantity ?? 0)
             }))
             consumer.commitOffsets([
                 { topic, partition, offset: message.offset },

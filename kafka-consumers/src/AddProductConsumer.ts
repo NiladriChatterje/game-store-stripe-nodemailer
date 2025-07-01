@@ -36,7 +36,7 @@ async function main() {
       const productPayload: ProductType = JSON.parse(
         message.value.toString()
       );
-      const checkIfExist = await sanityClient.fetch(`*[_type=="product" && eanUpcIsbnGtinAsinNumber=='${productPayload.eanUpcNumber}'][0]{_id}`);
+      const checkIfExist = await sanityClient.fetch(`*[_type=="product" && eanUpcNumber=='${productPayload.eanUpcNumber}'][0]{_id}`);
 
       const result = await sanityClient.createIfNotExists({
         _id: productPayload?._id,
