@@ -66,7 +66,7 @@ if (cluster.isPrimary) {
             const embeddings = await embeddingModel
               .embedQuery(onfulfilled.join(" "));
 
-            sanityClient?.createIfNotExists({
+            sanityClient?.createOrReplace({
               _id: productPayload._id,
               _type: "productEmbeddings",
               embeddings
