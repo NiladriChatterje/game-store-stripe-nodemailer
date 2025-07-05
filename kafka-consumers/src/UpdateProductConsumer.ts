@@ -101,7 +101,7 @@ async function main() {
                         .insert('replace',
                             `quantity[pincode=="${productPayload.pincode}"]`, [{
                                 pincode: productPayload.pincode,
-                                quantity: productPayload.quantity,
+                                quantity: productPayload.quantity + getQtyOnPincode?.quantityObj.quantity,
                                 _key: uuid()
                             }]
                         )
@@ -109,6 +109,11 @@ async function main() {
 
                     console.log(`result after updating quantity of a pincode:`, result);
                 }
+                //update the product to redis
+                redisClient.hset("products:details", productPayload._id, JSON.stringify({
+                    ...productPayload,
+                    quantity: productPayload.quantity + (getQtyOnPincode?.quantityObj?.quantity ?? 0)
+                }))
             }
 
             const seller_quantity = await sanityClient.fetch(`*[_type=='seller_product_details' 
@@ -127,10 +132,7 @@ async function main() {
                     lng: productPayload?.geoPoint.lng
                 }
             })
-            redisClient.hset("products:details", productPayload._id, JSON.stringify({
-                ...productPayload,
-                quantity: productPayload.quantity + (getQtyOnPincode?.quantityObj?.quantity ?? 0)
-            }))
+
             consumer.commitOffsets([
                 { topic, partition, offset: message.offset },
             ]);
