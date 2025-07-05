@@ -42,3 +42,5 @@ async function init() {
         })
 
 }
+
+init();

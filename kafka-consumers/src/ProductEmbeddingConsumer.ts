@@ -71,7 +71,7 @@ if (cluster.isPrimary) {
               _type: "productEmbeddings",
               embeddings
             })
-            console.log(embeddings)
+            // console.log(embeddings)
             redisClient.hSet("product:embeddings", productPayload._id, JSON.stringify(embeddings))
           });
 
