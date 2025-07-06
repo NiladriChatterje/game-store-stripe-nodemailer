@@ -73,6 +73,19 @@ async function admin() {
         timeout: 60000,
       })
 
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "update-product-quantity-topic",
+            numPartitions: 5,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      })
+
     // await admin
     //   .deleteTopics({ topics: ["product-topic", "product-db-save-topic"] })
 
