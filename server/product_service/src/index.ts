@@ -260,6 +260,15 @@ if (cluster.isPrimary) {
           producer.send({
             topic: 'update-product-topic',
             messages: [{ value: JSON.stringify(req.body) }]
+          });
+          producer.send({
+            topic: 'update-product-quantity-topic',
+            messages: [{
+              value: JSON.stringify({
+                _id: req.body._id, pincode: req.body.pincode,
+                quantity: req.body.quantity
+              })
+            }]
           })
         } catch (err) {
 

@@ -7,6 +7,7 @@ export declare type ProductType = {
   category: string;
   eanUpcIsbnGtinAsinType: EanUpcIsbnType;
   eanUpcNumber: string;
+  pincode: string;
   price: {
     currency: string;
     discountPercentage: number;
