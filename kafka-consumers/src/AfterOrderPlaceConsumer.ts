@@ -19,11 +19,11 @@ async function main() {
         perspective: "published",
     });
     const consumer = kafka.consumer({
-        groupId: "product-db-update",
+        groupId: "product-quantity-db-update",
     });
 
     await consumer.connect();
-    await consumer.subscribe({ topic: "update-product-quantity-topic" });
+    await consumer.subscribe({ topic: "update-product-topic" });
 
     async function handleEachMessages({
         heartbeat,
@@ -106,7 +106,9 @@ async function main() {
             consumer.commitOffsets([
                 { topic, partition, offset: message.offset },
             ]);
-        } catch (error: Error | any) { }
+        } catch (error: Error | any) {
+
+        }
     }
 
     consumer.run({
