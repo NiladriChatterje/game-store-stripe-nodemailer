@@ -23,7 +23,7 @@ async function main() {
     });
 
     await consumer.connect();
-    await consumer.subscribe({ topic: "update-product-topic" });
+    await consumer.subscribe({ topic: "update-product-quantity-topic" });
 
     async function handleEachMessages({
         heartbeat,
