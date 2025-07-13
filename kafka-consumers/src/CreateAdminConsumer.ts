@@ -42,7 +42,7 @@ async function createAdmin() {
             lng: user.geoPoint.lng,
           },
           address: {
-            pinCode: user.address.pinCode,
+            pincode: user.address.pincode,
             county: user.address.county,
             state: user.address.state,
             country: user.address.country,

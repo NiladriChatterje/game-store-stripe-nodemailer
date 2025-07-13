@@ -1,4 +1,3 @@
-import { Worker } from 'worker_threads'
 import cluster from 'cluster'
 import express, { Express, NextFunction, Request, Response } from 'express'
 import cors from 'cors'
@@ -8,6 +7,7 @@ import { Kafka, Producer } from 'kafkajs'
 import { spawn } from 'child_process'
 import { type Subscription } from '@declaration/index'
 import { ClerkClient, verifyToken } from '@clerk/backend'
+import nodemailer from 'nodemailer';
 import Razorpay from 'razorpay'
 import shortid from 'shortid'
 import { JwtPayload } from '@clerk/types'
@@ -54,6 +54,16 @@ if (cluster.isPrimary) {
         clientId: 'xv-store',
         brokers: ['localhost:9092', 'localhost:9093', 'localhost:9094']
     })
+
+    const transport = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.AUTH_EMAIL,
+            pass: process.env.APP_KEY,
+        },
+    });
+
+    const { sendMail } = transport;
 
     const verifyClerkToken = async (req: Request<{}, {}, any>, res: Response, next: NextFunction) => {
         try {
@@ -139,7 +149,7 @@ if (cluster.isPrimary) {
                     }
                 );
                 await producer.disconnect()
-                res.status(200).send('new subscription added.');
+                res.status(201).send('new subscription added.');
             } catch (err) {
                 console.log(err);
                 res.status(501).send('issue');
@@ -150,9 +160,29 @@ if (cluster.isPrimary) {
     //put orders in the kafka
     app.put('/user-order',
         verifyClerkToken,
-        async (req: Request, res: Response, next: NextFunction) => {
-            const userId = req.headers['x-user-id']
+        async (req: Request<{}, {}, {
+            customer: string;
+            customerEmail: string;
+            product: string;//product_id
+            transactionId: string;
+            orderId: string;
+            paymentSignature: string;
+            amount: number;
+            pincode: number;
+            quantity: number;
+        }>, res: Response, next: NextFunction) => {
+            const userId = req.headers['x-user-id'];
 
+            const producer = kafka.producer();
+            await producer.connect();
+            producer.send({
+                topic: 'update-product-quantity-topic',
+                messages: [{ value: JSON.stringify(req.body) }]
+            });
+
+            sendMail({
+                to: req.body.customerEmail
+            })
         });
 
 

@@ -6,7 +6,7 @@ export const AddressObject = defineType({
     validation: rule => rule.required(),
     fields: [
         defineField({
-            name: 'pinCode',
+            name: 'pincode',
             title: 'PIN Code',
             type: 'string',
             validation: rule => rule.required().length(6)

@@ -7,23 +7,89 @@ import { availableParallelism } from "os";
 import type { UserType } from "../declaration/index.d.ts";
 import { createClient, SanityClient } from '@sanity/client'
 import { sanityConfig } from './utils/index.js';
+import { createClient as RedisClient } from 'redis';
+import { verifyToken } from "@clerk/backend";
+import { JwtPayload } from "@clerk/types";
+import { spawn } from "child_process";
+import { Kafka } from "kafkajs";
 
 dotenv.config();
 
+declare global {
+  namespace Express {
+    interface Request {
+      auth: NonNullable<JwtPayload | undefined>;
+      userId: string;
+    }
+  }
+}
 
 if (cluster.isPrimary) {
-  new Worker("./dist/BackgroundPingProcess.js");
+  let old_child_process: any[] = []
+  setInterval(() => {
+    const child_process = spawn('curl.exe', [
+      '-X',
+      'GET',
+      `http://localhost:${process.env.PORT}/`,
+    ])
+
+    while (old_child_process.length > 0) {
+      let pop_process = old_child_process.pop()
+      pop_process?.kill(0)
+    }
+
+    child_process.stdout.on('data', buffer => {
+      console.log(buffer.toString('utf-8'))
+      old_child_process.push(child_process)
+    })
+  }, 60000)
 
   let p;
   for (let i = 0; i < availableParallelism(); i++) {
     p = cluster.fork();
+
     p.on("exit", (_statusCode: number) => {
       p = cluster.fork();
     });
   }
 } else {
   const app: Express = express();
+  const sanityClient = createClient(sanityConfig);
+  const redisClient = RedisClient();
 
+  const kafka = new Kafka({
+    clientId: 'xv-store',
+    brokers: ['localhost:9092', 'localhost:9093', 'localhost:9094']
+  });
+
+
+  try {
+    ; (async () => { await redisClient.connect(); })();
+  } catch (err) {
+    console.log("<<redis connection failed>>");
+  }
+
+  const verifyUserToken = async (req: Request, res: Response, next: NextFunction) => {
+    const token = req.headers.authorization?.split(" ")[1];
+    try {
+      if (!token) {
+        res.status(401).json({ error: 'No token provided' });
+        return;
+      }
+      const payload = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY,
+        clockSkewInMs: 60000
+      });
+
+      req.auth = payload;
+      next();
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      res.status(403).json({ error: 'Invalid token' });
+      return;
+    }
+
+  }
   app.use(cors());
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
@@ -38,29 +104,23 @@ if (cluster.isPrimary) {
 
   app.post(
     "/create-user",
-    (req: Request<{}, UserType>, res: Response) => {
+    async (req: Request<{}, {}, UserType>, res: Response) => {
+      const producer = kafka.producer();
+      await producer.connect();
 
+      producer.send({
+        topic: 'user-create-topic',
+        messages: [{ value: JSON.stringify(req.body) }]
+      })
     }
   );
 
   app.get(
     "/fetch-user-data/:_id",
+    verifyUserToken,
     (req: Request<{ _id: string }>, res: Response) => {
       console.log(req.params._id);
-      const NotClonedObject = {
-        workerData: {
-          _id: req.params._id,
-        },
-      };
-      const worker = new Worker("./dist/fetchAdminData.js", NotClonedObject);
-      worker.on("message", (value) => {
-        console.log(value);
-        res.status(value.status).json(value.result);
-      });
 
-      worker.on("error", (err) => {
-        res.status(503).send(err.message);
-      });
     }
   );
 
@@ -95,12 +155,6 @@ if (cluster.isPrimary) {
 
   app.post("/fetch-phone-otp", (req: Request, res: Response) => {
     const OTP = Math.trunc(Math.random() * 10 ** 6);
-    const worker = new Worker("./dist/PhoneWorker.js", {
-      workerData: {
-        recipient: req.body?.phone,
-        confirmation: OTP,
-      },
-    });
 
     res.send("SMS sent");
   });

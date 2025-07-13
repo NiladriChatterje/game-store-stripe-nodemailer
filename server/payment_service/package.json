@@ -24,7 +24,7 @@
   "scripts": {
     "build": "npx tspc",
     "start": "tspc && node dist/index",
-    "dev": "npx tsx dist/index"
+    "dev": "npx tsx src/index.ts"
   },
   "keywords": [
     "product_service",

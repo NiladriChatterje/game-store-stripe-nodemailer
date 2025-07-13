@@ -17,7 +17,7 @@ export const OrderType = defineType({
 
         }),
         defineField({
-            name: 'qty',
+            name: 'quantity',
             type: 'number',
             validation: rule => rule.required().positive().min(1)
         }),

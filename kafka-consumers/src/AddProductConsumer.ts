@@ -3,6 +3,7 @@ import { createClient, SanityClient } from "@sanity/client";
 import { createClient as RedisClient } from 'redis'
 import type { ProductType } from "@declaration/productType.d.ts";
 import { sanityConfig } from "@utils";
+import { uuidv4 } from "uuidv7";
 
 const kafka: Kafka = new Kafka({
   clientId: "xvstore",
@@ -36,45 +37,58 @@ async function main() {
       const productPayload: ProductType = JSON.parse(
         message.value.toString()
       );
-      const checkIfExist = await sanityClient.fetch(`*[_type=="product" && eanUpcNumber=='${productPayload.eanUpcNumber}'][0]{_id}`);
+      //for potential duplicate listing
+      const checkIfUPCExist: string = await sanityClient.fetch(`*[_type=="product" && eanUpcNumber=='${productPayload.eanUpcNumber}'][0]{_id}`);
 
       const result = await sanityClient.createIfNotExists({
         _id: productPayload?._id,
         _type: "product",
         ...productPayload,
         quantity: [{
+          _key: uuidv4(),
           pincode: productPayload.pincode,
           quantity: productPayload.quantity
         }]
       });
       heartbeat();
-      if (result)
-        await sanityClient.patch(productPayload.seller)
-          .append('productReferenceAfterListing', [result]).commit();
 
-      await sanityClient.patch(productPayload._id)
-        .append('seller', [await sanityClient.fetch(`*[_type=='admin' && _id=='${productPayload.seller}']`)]).commit();
+      if (result._id) {
+        await sanityClient.patch(productPayload.seller)
+          .append('productReferenceAfterListing', [{ _type: 'reference', _ref: productPayload._id }]).commit();
+
+        await sanityClient.patch(productPayload._id)
+          .append('seller', [{ _type: 'reference', _ref: productPayload.seller }]).commit();
+      }
 
 
       const seller_quantity = await sanityClient.fetch(`*[_type=='seller_product_details' 
             && product_id match "${productPayload._id}"
             && seller_id match "${productPayload.seller}"
-            ]`);
-      const success = await sanityClient.createOrReplace({
-        _id: seller_quantity._id,
-        _type: 'seller_product_details',
-        seller_id: productPayload.seller,
-        product_id: productPayload._id,
-        pincode: productPayload.pincode,
-        quantity: productPayload.quantity + (seller_quantity?.quantity ?? 0)
-      })
-      if (success._id)
-        redisClient.hset("products:details", productPayload._id, JSON.stringify(productPayload))
+            && pincode == "${productPayload.pincode}"
+            ][0]{...}`);
 
-      if (checkIfExist != null) {
+      if (seller_quantity == null)
+        await sanityClient.create({
+          _type: 'seller_product_details',
+          seller_id: productPayload.seller,
+          product_id: productPayload._id,
+          pincode: productPayload.pincode,
+          quantity: productPayload.quantity
+        });
+      else
+        await sanityClient.patch(seller_quantity?._id)
+          .set({
+            quantity: productPayload.quantity + (seller_quantity?.quantity ?? 0)
+          }).commit()
+
+
+      redisClient.hset("products:details", productPayload._id, JSON.stringify(productPayload))
+
+      //map this product with similar products already listed
+      if (checkIfUPCExist != null) {
         await sanityClient.create({
           _type: 'potentialDuplicates',
-          existingProduct: checkIfExist,
+          existingProduct: checkIfUPCExist,
           potentialDuplicate: productPayload._id
         })
       }

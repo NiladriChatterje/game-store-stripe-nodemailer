@@ -12,7 +12,7 @@ export declare interface AdminFieldsType {
   email: string | null | undefined;
   SubscriptionPlan?: subscription[] | undefined | null;
   address: {
-    pinCode: string;
+    pincode: string;
     county: string;
     country: string;
     state: string;

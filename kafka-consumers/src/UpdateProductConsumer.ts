@@ -43,90 +43,92 @@ async function main() {
                 quantityObj?:
                 { quantity: number; _key: string; _type: string, pincode: string }
             }
-
             const getQtyOnPincode: QuantityObj = await sanityClient.fetch(`*[_type == 'product'
-                            && _id match '${productPayload._id}'][0]{
-                            _id,
-                            "quantityObj": quantity[pincode match "${productPayload.pincode}"][0] 
-                          }`);
+                && _id match '${productPayload._id}'][0]{
+                _id,
+                "quantityObj": quantity[pincode match "${productPayload.pincode}"][0] 
+              }`);
+            //if record was found update the particular document in the array with extra quantity
+            if (getQtyOnPincode.quantityObj != null) {
 
-            if (getQtyOnPincode._id.length > 0) {
-                if (getQtyOnPincode?.quantityObj?.pincode == null) {
-                    const result = await sanityClient
-                        .patch(productPayload._id)
-                        .set({
-                            productName: productPayload?.productName,
-                            imagesBase64: productPayload.imagesBase64,
-                            eanUpcIsbnGtinAsinType: productPayload.eanUpcIsbnGtinAsinType,
-                            eanUpcNumber: productPayload.eanUpcNumber,
-                            category: productPayload.category,
-                            modelNumber: productPayload.modelNumber,
-                            productDescription: productPayload.productDescription,
-                            price: {
-                                pdtPrice: productPayload.price.pdtPrice,
-                                discountPercentage: productPayload.price.discountPercentage,
-                                currency: productPayload?.price.currency
-                            },
-                            keywords: productPayload.keywords
-                        })
-                        .append(
-                            "quantity", [{
-                                pincode: productPayload.pincode, quantity: productPayload.quantity,
-                                _key: uuid()
-                            }]
-                        )
-                        .commit();
-
-                    console.log(`result after appending new pincode:`, result);
-                }
-                else {
-                    //if record was found update the particular document in the array with extra quantity
-                    const result = await sanityClient
-                        .patch(productPayload._id)
-                        .set({
-                            productName: productPayload?.productName,
-                            imagesBase64: productPayload.imagesBase64,
-                            eanUpcIsbnGtinAsinType: productPayload.eanUpcIsbnGtinAsinType,
-                            eanUpcNumber: productPayload.eanUpcNumber,
-                            category: productPayload.category,
-                            modelNumber: productPayload.modelNumber,
-                            productDescription: productPayload.productDescription,
-                            price: {
-                                pdtPrice: productPayload.price.pdtPrice,
-                                discountPercentage: productPayload.price.discountPercentage,
-                                currency: productPayload?.price.currency
-                            },
-                            keywords: productPayload.keywords
-                        })
-                        .insert('replace',
-                            `quantity[pincode=="${productPayload.pincode}"]`, [{
-                                pincode: productPayload.pincode,
-                                quantity: productPayload.quantity + getQtyOnPincode?.quantityObj.quantity,
-                                _key: uuid()
-                            }]
-                        )
-                        .commit();
-
-                    console.log(`result after updating quantity of a pincode:`, result);
-                }
-                //update the product to redis
-                redisClient.hset("products:details", productPayload._id, JSON.stringify({
-                    ...productPayload,
-                    quantity: productPayload.quantity + (getQtyOnPincode?.quantityObj?.quantity ?? 0)
-                }))
+                const result = await sanityClient
+                    .patch(productPayload._id)
+                    .set({
+                        productName: productPayload?.productName,
+                        imagesBase64: productPayload.imagesBase64,
+                        eanUpcIsbnGtinAsinType: productPayload.eanUpcIsbnGtinAsinType,
+                        eanUpcNumber: productPayload.eanUpcNumber,
+                        category: productPayload.category,
+                        modelNumber: productPayload.modelNumber,
+                        productDescription: productPayload.productDescription,
+                        price: {
+                            pdtPrice: productPayload.price.pdtPrice,
+                            discountPercentage: productPayload.price.discountPercentage,
+                            currency: productPayload?.price.currency
+                        },
+                        keywords: productPayload.keywords
+                    })
+                    .insert("replace",
+                        "quantity", [{
+                            pincode: productPayload.pincode,
+                            quantity: productPayload.quantity + getQtyOnPincode?.quantityObj.quantity,
+                            _key: uuid()
+                        }]
+                    )
+                    .commit();
+                console.log(`result after updating quantity of a pincode:`, result);
+            }
+            else {
+                await sanityClient
+                    .patch(productPayload._id)
+                    .set({
+                        productName: productPayload?.productName,
+                        imagesBase64: productPayload.imagesBase64,
+                        eanUpcIsbnGtinAsinType: productPayload.eanUpcIsbnGtinAsinType,
+                        eanUpcNumber: productPayload.eanUpcNumber,
+                        category: productPayload.category,
+                        modelNumber: productPayload.modelNumber,
+                        productDescription: productPayload.productDescription,
+                        price: {
+                            pdtPrice: productPayload.price.pdtPrice,
+                            discountPercentage: productPayload.price.discountPercentage,
+                            currency: productPayload?.price.currency
+                        },
+                        keywords: productPayload.keywords
+                    })
+                    .append(
+                        "quantity", [{
+                            pincode: productPayload.pincode, quantity: productPayload.quantity,
+                            _key: uuid()
+                        }]
+                    )
+                    .commit();
+            }
+            //update the product to redis
+            let clearinterval: string | number | NodeJS.Timeout;
+            if (redisClient.isOpen) {
+                redisClient.hset("products:details",
+                    productPayload._id, JSON.stringify(productPayload))
+            } else {
+                clearinterval = setInterval(() => {
+                    redisClient.hset("products:details",
+                        productPayload._id, JSON.stringify(productPayload))
+                    clearInterval(clearinterval)
+                }, 5000);
             }
 
             const seller_quantity = await sanityClient.fetch(`*[_type=='seller_product_details' 
                     && product_id match "${productPayload._id}"
                     && seller_id match "${productPayload.seller}"
                     ][0]`);
+
             const success = await sanityClient.createOrReplace({
                 _id: seller_quantity._id,
                 _type: 'seller_product_details',
                 seller_id: productPayload.seller,
                 product_id: productPayload._id,
                 pincode: productPayload.pincode,
-                quantity: productPayload.quantity + (seller_quantity?.quantity ?? 0),
+                quantity: productPayload.quantity,
                 geoPoint: {
                     lat: productPayload?.geoPoint.lat,
                     lng: productPayload?.geoPoint.lng

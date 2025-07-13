@@ -29,7 +29,7 @@ async function updateAdminRecord() {
     const {
       _id,
       gstin,
-      address: { pinCode, county, country, state },
+      address: { pincode, county, country, state },
       email,
       phone,
     }: AdminFieldsType = JSON.parse(message.value.toString());
@@ -40,7 +40,7 @@ async function updateAdminRecord() {
         .set({
           gstin,
           address: {
-            pinCode,
+            pincode,
             county,
             country,
             state,
