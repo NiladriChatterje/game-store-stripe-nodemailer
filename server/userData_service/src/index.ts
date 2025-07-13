@@ -105,13 +105,17 @@ if (cluster.isPrimary) {
   app.post(
     "/create-user",
     async (req: Request<{}, {}, UserType>, res: Response) => {
-      const producer = kafka.producer();
-      await producer.connect();
 
-      producer.send({
-        topic: 'user-create-topic',
-        messages: [{ value: JSON.stringify(req.body) }]
-      })
+      console.log(req.body)
+      // const producer = kafka.producer();
+      // await producer.connect();
+
+      // producer.send({
+      //   topic: 'user-create-topic',
+      //   messages: [{ value: JSON.stringify(req.body) }]
+      // })
+      // await producer.disconnect();
+      return;
     }
   );
 
@@ -121,6 +125,8 @@ if (cluster.isPrimary) {
     (req: Request<{ _id: string }>, res: Response) => {
       console.log(req.params._id);
 
+      res.json(null)
+      return;
     }
   );
 
