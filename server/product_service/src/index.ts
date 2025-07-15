@@ -235,6 +235,7 @@ if (cluster.isPrimary) {
       async (req: Request<{}, {}, ProductType>, res: Response) => {
         const producer = kafka.producer();
         try {
+          console.log(req.body)
           await producer.connect();
           const recordMetaData: RecordMetadata[] = await producer.send({
             topic: "add-product-topic",

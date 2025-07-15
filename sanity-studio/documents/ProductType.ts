@@ -1,4 +1,4 @@
-import { prepareForPreview } from 'sanity'
+import { defineArrayMember, prepareForPreview } from 'sanity'
 import { defineField, defineType } from 'sanity'
 export const pair = {
   name: 'pair',
@@ -113,7 +113,7 @@ export const ProductType = defineType({
       name: 'seller',
       title: 'Seller',
       type: 'array',
-      of: [{ type: 'reference', to: [{ type: 'admin' }] }],
+      of: [defineArrayMember({ type: 'reference', to: [{ type: 'admin' }] })],
       validation: (rule) => rule.required().min(1),
     }),
     defineField({

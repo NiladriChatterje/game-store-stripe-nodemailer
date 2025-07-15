@@ -107,14 +107,19 @@ if (cluster.isPrimary) {
     async (req: Request<{}, {}, UserType>, res: Response) => {
 
       console.log(req.body)
-      // const producer = kafka.producer();
-      // await producer.connect();
+      const producer = kafka.producer();
+      try {
+        await producer.connect();
 
-      // producer.send({
-      //   topic: 'user-create-topic',
-      //   messages: [{ value: JSON.stringify(req.body) }]
-      // })
-      // await producer.disconnect();
+        producer.send({
+          topic: 'user-create-topic',
+          messages: [{ value: JSON.stringify(req.body) }]
+        })
+        await producer.disconnect();
+      } catch (err: Error | any) {
+        console.log("<<error>> :", err.message)
+      }
+
       return;
     }
   );
