@@ -45,8 +45,6 @@ async function main() {
     } catch (e) {
         console.log("<<error >> :", e.message);
     }
-
-
 }
 
 main();
