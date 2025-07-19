@@ -62,34 +62,20 @@ async function main() {
                           }`);
 
             if (getQtyOnPincode._id.length > 0) {
-                if (getQtyOnPincode?.quantityObj?.pincode == null) {
-                    const result = await sanityClient
-                        .patch(productPayload.product)
-                        .append(
-                            "quantity", [{
-                                pincode: productPayload.pincode, quantity: productPayload.quantity,
-                                _key: uuid()
-                            }]
-                        )
-                        .commit();
+                //if record was found update the particular document in the array with extra quantity
+                const result = await sanityClient
+                    .patch(productPayload.product)
+                    .insert('replace',
+                        `quantity[pincode=="${productPayload.pincode}"]`, [{
+                            pincode: productPayload.pincode,
+                            quantity: productPayload.quantity - getQtyOnPincode?.quantityObj.quantity,
+                            _key: uuid()
+                        }]
+                    )
+                    .commit();
 
-                    console.log(`result after appending new pincode:`, result);
-                }
-                else {
-                    //if record was found update the particular document in the array with extra quantity
-                    const result = await sanityClient
-                        .patch(productPayload.product)
-                        .insert('replace',
-                            `quantity[pincode=="${productPayload.pincode}"]`, [{
-                                pincode: productPayload.pincode,
-                                quantity: productPayload.quantity + getQtyOnPincode?.quantityObj.quantity,
-                                _key: uuid()
-                            }]
-                        )
-                        .commit();
+                console.log(`result after updating quantity of a pincode:`, result);
 
-                    console.log(`result after updating quantity of a pincode:`, result);
-                }
                 //update the product to redis
                 redisClient.hset("products:details", productPayload.product, JSON.stringify({
                     ...productPayload,

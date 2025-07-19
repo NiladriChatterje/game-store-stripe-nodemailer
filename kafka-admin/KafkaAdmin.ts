@@ -28,6 +28,34 @@ async function admin() {
         ],
         waitForLeaders: true,
         timeout: 60000,
+      });
+
+    // user-create-topic
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "user-create-topic",
+            numPartitions: 6,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      })
+
+    // user-update-topic
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "user-update-topic",
+            numPartitions: 6,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
       })
 
 

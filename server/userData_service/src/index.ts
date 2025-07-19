@@ -105,7 +105,6 @@ if (cluster.isPrimary) {
   app.post(
     "/create-user",
     async (req: Request<{}, {}, UserType>, res: Response) => {
-
       console.log(req.body)
       const producer = kafka.producer();
       try {
