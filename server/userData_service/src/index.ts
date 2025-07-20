@@ -30,7 +30,7 @@ if (cluster.isPrimary) {
     const child_process = spawn('curl.exe', [
       '-X',
       'GET',
-      `http://localhost:${process.env.PORT}/`,
+      `http://localhost:${process.env.PORT ?? 5001}/`,
     ])
 
     while (old_child_process.length > 0) {
@@ -54,7 +54,7 @@ if (cluster.isPrimary) {
   }
 } else {
   const app: Express = express();
-  const sanityClient = createClient(sanityConfig);
+  const sanityClient: SanityClient = createClient(sanityConfig);
   const redisClient = RedisClient();
 
   const kafka = new Kafka({
@@ -117,6 +117,35 @@ if (cluster.isPrimary) {
         await producer.disconnect();
       } catch (err: Error | any) {
         console.log("<<error>> :", err.message)
+      }
+
+      return;
+    }
+  );
+
+  app.get(
+    "/fetch-user-data/:_id",
+    verifyUserToken,
+    async (req: Request<{ _id: string }>, res: Response) => {
+      console.log("fetch-user :", req.params._id);
+      try {
+        if (redisClient.isOpen) {
+          const redisResult = await redisClient.hGet(`hashSet:user:details`, req.params._id);
+          if (redisClient != null) {
+            console.log("<< redis hit - user-found >>");
+            const deserialized = JSON.parse(redisResult as string)
+            console.log(deserialized)
+            res.json(deserialized)
+            return;
+          }
+        }
+        const result = await sanityClient.fetch<UserType>(`*[_type=="user" && _id == $id][0]`, {
+          id: req.params._id
+        })
+        console.log(result)
+        res.json(result)
+      } catch (e: Error | any) {
+        res.json({ error: e.message })
       }
 
       return;

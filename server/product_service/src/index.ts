@@ -211,7 +211,7 @@ if (cluster.isPrimary) {
             if (redisClient.isOpen) {
               const fromRedisResult = await redisClient.hGet('products:details', productId)
               if (fromRedisResult) {
-                res.send(200).json(JSON.parse(fromRedisResult));
+                res.status(200).json(JSON.parse(fromRedisResult));
                 return;
               }
             }
@@ -227,6 +227,38 @@ if (cluster.isPrimary) {
       }
     );
 
+    //just fetch the quantity of the product in that location
+    app.get(
+      "/fetch-product-quantity/:pincode/:productId",
+      async (req: Request<{ productId: string; pincode: string }>, res: Response, next: NextFunction) => {
+        const productId: string | undefined = req.params.productId
+        const pincode = req.params.pincode
+        if (productId) {
+          try {
+            if (redisClient.isOpen) {
+              console.log("inside redis")
+              const fromRedisResult = (await redisClient.hGet('products:details', productId))
+              const deserialized = fromRedisResult != null && JSON.parse(fromRedisResult)
+
+              if (deserialized != null) {
+                for (let quant of deserialized.quantity)
+                  if (quant["pincode"] == pincode) {
+                    res.status(200).json(quant);
+                    return;
+                  }
+              }
+            }
+            const result: ProductType = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]
+                                          {"quantity":quantity[pincode=="700135"][0]{quantity}}`);
+            res.status(200).send(result);
+            return;
+          }
+          catch (err) {
+            res.status(502).json({ error: "Service down!" });
+            return;
+          }
+        }
+      })
     //post to kafka topic [product-topic] to create the product
     app.post(
       "/add-product",
