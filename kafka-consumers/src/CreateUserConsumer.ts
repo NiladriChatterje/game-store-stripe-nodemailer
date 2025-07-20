@@ -41,18 +41,40 @@ async function handleMessage({ partition, topic, message, heartbeat }: EachMessa
         email: UserPayload.email,
         geoPoint: UserPayload.geoPoint,
         address: UserPayload.address,
-        cart: UserPayload.cart.map(item => ({
-            product_reference: {
-                _ref: item._id,
-                _type: 'reference'
-            }, _key: uuidv4(), cart_quantity: item.quantity
-        }))
     });
 
     console.log("<< document created >> :", createdUserDocument);
+
+    //if the user has a cart then only create the cart
+    if (UserPayload.cart.length != 0) {
+        const userCartDocument = await sanityClient.fetch(`*[_type=="user_cart" && user_id=="${UserPayload._id}"][0]`);
+        if (userCartDocument != null) {
+            await sanityClient.patch(userCartDocument._id).set({
+                cart: UserPayload.cart.map(item => ({
+                    product_reference: {
+                        _ref: item._id,
+                        _type: 'reference'
+                    }, _key: uuidv4(), cart_quantity: item.quantity
+                }))
+            }).commit()
+        } else {
+            await sanityClient.create({
+                user_id: UserPayload._id,
+                cart: UserPayload.cart.map(item => ({
+                    product_reference: {
+                        _ref: item._id,
+                        _type: 'reference'
+                    }, _key: uuidv4(), cart_quantity: item.quantity
+                })),
+                _type: "user_cart"
+            })
+        }
+    }
+
     if (redisClient.isOpen) {
         await redisClient.hSet(`hashSet:user:details`, createdUserDocument._id, JSON.stringify(createdUserDocument));
         await redisClient.sAdd(`set:admin:id`, createdUserDocument._id);
+        await redisClient.hSet(`hashSet:user:cart`, createdUserDocument._id, JSON.stringify(UserPayload.cart))
     }
 
     await nodemailerObj.sendMail({

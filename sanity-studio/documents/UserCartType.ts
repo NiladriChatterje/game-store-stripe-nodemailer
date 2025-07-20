@@ -12,8 +12,25 @@ export const UserCartType = defineType({
         }),
         defineField({
             name: 'cart',
+            title: 'cart',
             type: 'array',
-            of: [{ type: 'reference', to: [{ type: 'product' }] }]
+            of: [{
+                type: 'object',
+                name: 'product_ref -> quantity',
+                fields: [
+                    defineField(
+                        {
+                            name: "product_reference",
+                            type: 'reference',
+                            to: [{ type: 'product' }],
+                        }
+                    ),
+                    defineField({
+                        name: 'cart_quantity',
+                        type: 'number'
+                    })
+                ]
+            }]
         })
     ]
 })
