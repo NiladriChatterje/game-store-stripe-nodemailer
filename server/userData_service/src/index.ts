@@ -126,10 +126,28 @@ if (cluster.isPrimary) {
   app.get(
     "/fetch-user-data/:_id",
     verifyUserToken,
-    (req: Request<{ _id: string }>, res: Response) => {
-      console.log(req.params._id);
+    async (req: Request<{ _id: string }>, res: Response) => {
+      console.log("fetch-user :", req.params._id);
+      try {
+        if (redisClient.isOpen) {
+          const redisResult = await redisClient.hGet(`hashSet:user:details`, req.params._id);
+          if (redisClient != null) {
+            console.log("<< redis hit - user-found >>");
+            const deserialized = JSON.parse(redisResult as string)
+            console.log(deserialized)
+            res.json(deserialized)
+            return;
+          }
+        }
+        const result = await sanityClient.fetch<UserType>(`*[_type=="user" && _id == $id][0]`, {
+          id: req.params._id
+        })
+        console.log(result)
+        res.json(result)
+      } catch (e: Error | any) {
+        res.json({ error: e.message })
+      }
 
-      res.json(null)
       return;
     }
   );
