@@ -52,7 +52,7 @@ async function handleMessage({ partition, topic, message, heartbeat }: EachMessa
     console.log("<< document created >> :", createdUserDocument);
     if (redisClient.isOpen) {
         await redisClient.hSet(`hashSet:user:details`, createdUserDocument._id, JSON.stringify(createdUserDocument));
-        await redisClient.sAdd(`set:admin:id`, createdUserDocument.username);
+        await redisClient.sAdd(`set:admin:id`, createdUserDocument._id);
     }
 
     await nodemailerObj.sendMail({

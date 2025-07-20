@@ -32,20 +32,18 @@ const consumer: Consumer = kafka.consumer({
 async function handleMessage({ partition, topic, message, heartbeat }: EachMessagePayload) {
     const UserPayload: UserType = JSON.parse(message.value.toString());
     console.log("<< user data >> :", UserPayload)
-    const createdUserDocument = await sanityClient.createIfNotExists({
-        _id: UserPayload._id,
-        _type: 'user',
+    const updatedUserDocument = await sanityClient.patch(UserPayload._id).set({
         username: UserPayload.username,
         phone: UserPayload.phone,
         email: UserPayload.email,
         geoPoint: UserPayload.geoPoint,
         address: UserPayload.address,
-    });
+    }).commit();
 
-    console.log("<< document created >> :", createdUserDocument);
+    console.log("<< document created >> :", updatedUserDocument);
     if (redisClient.isOpen) {
-        await redisClient.hSet(`hashSet:user:details`, createdUserDocument._id, JSON.stringify(createdUserDocument));
-        await redisClient.sAdd(`set:admin:id`, createdUserDocument.username);
+        await redisClient.hSet(`hashSet:user:details`, updatedUserDocument._id, JSON.stringify(updatedUserDocument));
+        await redisClient.sAdd(`set:admin:id`, updatedUserDocument._id);
     }
 
     await nodemailerObj.sendMail({
@@ -54,8 +52,7 @@ async function handleMessage({ partition, topic, message, heartbeat }: EachMessa
         subject: 'USER-ACCOUNT-CREATION',
         html: `
         <div>
-        <p>${UserPayload.username}, your user account has been created successfully.<br />
-        Enjoy shopping in our website.<br /><br /><br /></p>
+        <p>${UserPayload.username}, Profile has been updated successfully!<br /><br /><br /></p>
         ${UserPayload.phone ? '' :
                 `<strong>Add your phone number so that we can reach you<br />
         out whenever you want our assistance.</strong>`}
