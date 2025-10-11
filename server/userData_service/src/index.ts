@@ -83,7 +83,8 @@ if (cluster.isPrimary) {
 
       req.auth = payload;
       next();
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Token verification failed:', error);
       res.status(403).json({ error: 'Invalid token' });
       return;
@@ -152,25 +153,27 @@ if (cluster.isPrimary) {
     }
   );
 
+  //fetch cart of an user
   app.get(
-    "/fetch-user-data/:_id",
+    "/fetch-user-cart/:_id",
     verifyUserToken,
     async (req: Request<{ _id: string }>, res: Response) => {
-      console.log("fetch-user :", req.params._id);
+      console.log("user_id :", req.params._id);
       try {
         if (redisClient.isOpen) {
-          const redisResult = await redisClient.hGet(`hashSet:user:details`, req.params._id);
+          const redisResult = await redisClient.hGet(`hashSet:user:cart`, req.params._id);
           if (redisClient != null) {
-            console.log("<< redis hit - user-found >>");
+            console.log("<< redis hit - user-cart >>");
             const deserialized = JSON.parse(redisResult as string)
             console.log(deserialized)
             res.json(deserialized)
             return;
           }
         }
-        const result = await sanityClient.fetch<UserType>(`*[_type=="user" && _id == $id][0]`, {
+        const result = await sanityClient.fetch(`*[_type=="user_cart" && user_id == $id][0]`, {
           id: req.params._id
-        })
+        });
+        await redisClient.hSet(`hashSet:user:cart`, req.params._id, JSON.stringify(result));
         console.log(result)
         res.json(result)
       } catch (e: Error | any) {
@@ -182,7 +185,8 @@ if (cluster.isPrimary) {
   );
 
   app.patch(
-    "/update-admin-info",
+    "/update-user-info",
+    verifyUserToken,
     async (req: Request, res: Response, next: NextFunction) => {
       if (req.headers.authorization?.split(" ")[1])
         next()
@@ -200,6 +204,7 @@ if (cluster.isPrimary) {
 
 
   app.post("/fetch-mail-otp", (req: Request, res: Response) => {
+
     const OTP = Math.trunc(Math.random() * 10 ** 6);
     const worker = new Worker("./dist/EmailWorker.js", {
       workerData: {

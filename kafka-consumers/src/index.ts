@@ -1,3 +1,14 @@
-import { spawn } from 'child_process';
+// Import all consumers directly
+import './CreateAdminConsumer';
+import './AddProductConsumer';
+import './AfterOrderPlaceConsumer';
+import './CreateUserConsumer';
+import './ProductEmbeddingConsumer';
+import './UpdateUserCartConsumer';
+import './UpdateUserConsumer';
+import './SubscriptionConsumer';
 
-spawn('npx', ['tsx', './CreateAdminConsumer.ts']);
+console.log('All Kafka consumers are running...');
+
+// Keep the process running
+process.stdin.resume();

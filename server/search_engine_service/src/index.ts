@@ -42,11 +42,15 @@ if (cluster.isPrimary) {
   const redisC = redisClient();
   redisC.on('error', err => console.log('Redis Client Error', err));
 
-  const asyncRedisConnect = async () => {
-    await redisC.connect();
+  try {
+    const asyncRedisConnect = async () => {
+      await redisC.connect();
+
+    }
+    asyncRedisConnect();
+  } catch (err) {
 
   }
-  asyncRedisConnect();
   redisC.set("id", JSON.stringify([4, 5]))
 
   const app: Express = express();
