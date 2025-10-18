@@ -9,15 +9,16 @@ COPY . .
 # -s /bin/bash: Set default shell
 # -G sudo: Add to the sudo group
 # -H: Do not create home directory (if you don't want it)
-RUN useradd -ms /bin/bash production && \
-usermod -aG sudo production
+RUN addgroup -S sudo && \
+ adduser -S production -G sudo
 
+ RUN apk update \
+     && apk upgrade --no-cache 
+
+RUN npm install
 # change User to production
 USER production
 
-RUN apk update \
-    && apk upgrade --no-cache 
     
-RUN npm install
-EXPOSE 3000
+EXPOSE 5003
 CMD [ "npm","run","start" ]
