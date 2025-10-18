@@ -1,0 +1,25 @@
+diff --git a/node_modules/pidusage/lib/bin.js b/node_modules/pidusage/lib/bin.js
+index 914b84a..07267b7 100644
+--- a/node_modules/pidusage/lib/bin.js
++++ b/node_modules/pidusage/lib/bin.js
+@@ -8,7 +8,7 @@ const spawn = require('child_process').spawn
+   * @param  {String[]} args
+   * @param  {Function} done(err, stdout)
+   */
+-function run (cmd, args, options, done) {
++function run(cmd, args, options, done) {
+   if (typeof options === 'function') {
+     done = options
+     options = undefined
+@@ -30,6 +30,11 @@ function run (cmd, args, options, done) {
+   ch.on('error', function (err) {
+     if (executed) return
+     executed = true
++    // Silently ignore ENOENT errors for wmic on Windows
++    if (err.code === 'ENOENT' && (err.path === 'wmic' || err.syscall === 'spawn wmic')) {
++      // Return empty stats instead of error
++      return done(null, '', 0)
++    }
+     done(new Error(err))
+   })
+ 

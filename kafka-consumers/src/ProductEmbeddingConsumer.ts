@@ -12,7 +12,6 @@ import { sanityConfig } from "./utils";
 const kafka: Kafka = new Kafka({
   clientId: "xvstore",
   brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
-  ssl: true,
 });
 
 if (cluster.isPrimary) {

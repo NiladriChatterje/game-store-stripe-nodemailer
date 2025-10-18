@@ -1,0 +1,8 @@
+{
+  "module_conf": {
+    "pm2-server-monit": {
+      "disabled": true
+    }
+  },
+  "disable_logs": false
+}

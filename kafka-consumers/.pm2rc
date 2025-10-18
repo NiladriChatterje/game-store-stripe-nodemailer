@@ -1,0 +1,7 @@
+{
+  "daemon_mode": true,
+  "disable_trace": true,
+  "windowsHide": true,
+  "pidusage": false,
+  "disable_logs": true
+}

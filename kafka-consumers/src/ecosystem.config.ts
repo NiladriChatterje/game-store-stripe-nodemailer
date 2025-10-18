@@ -8,8 +8,14 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            // Disable monitoring to avoid wmic errors on Windows
+            disable_logs: false,
+            error_file: 'logs/add-product-consumer-error.log',
+            out_file: 'logs/add-product-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -20,8 +26,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/after-order-place-consumer-error.log',
+            out_file: 'logs/after-order-place-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -32,8 +43,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/create-admin-consumer-error.log',
+            out_file: 'logs/create-admin-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -44,8 +60,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/create-user-consumer-error.log',
+            out_file: 'logs/create-user-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -56,8 +77,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/product-embedding-consumer-error.log',
+            out_file: 'logs/product-embedding-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -68,8 +94,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/subscription-consumers-error.log',
+            out_file: 'logs/subscription-consumers-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -80,8 +111,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/update-admin-consumer-error.log',
+            out_file: 'logs/update-admin-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -92,8 +128,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/update-product-consumer-error.log',
+            out_file: 'logs/update-product-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -104,8 +145,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/update-user-cart-consumer-error.log',
+            out_file: 'logs/update-user-cart-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
         {
@@ -116,8 +162,13 @@ export default {
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/update-user-consumer-error.log',
+            out_file: 'logs/update-user-consumer-out.log',
             env: {
                 NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
             },
         },
     ],
