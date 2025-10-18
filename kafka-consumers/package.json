@@ -4,7 +4,12 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node --watch dist/index.js",
+    "start": "pm2 start src/ecosystem.config.ts && pm2 logs",
+    "stop": "pm2 stop ecosystem.config.ts",
+    "restart": "pm2 restart ecosystem.config.ts",
+    "delete": "pm2 delete ecosystem.config.ts",
+    "status": "pm2 status",
+    "logs": "pm2 logs",
     "dev": "npx tsx src/index.ts"
   },
   "keywords": [],
@@ -28,6 +33,8 @@
     "@types/node": "^22.13.1",
     "@types/nodemailer": "^6.4.17",
     "@types/uuid": "^10.0.0",
+    "pm2": "^5.4.3",
+    "tsx": "^4.19.2",
     "typescript-transform-paths": "^3.5.3"
   }
 }

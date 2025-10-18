@@ -8,7 +8,4 @@ import './UpdateUserCartConsumer';
 import './UpdateUserConsumer';
 import './SubscriptionConsumer';
 
-console.log('All Kafka consumers are running...');
 
-// Keep the process running
-process.stdin.resume();
