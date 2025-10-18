@@ -1,13 +1,15 @@
-export default {
+module.exports = {
     apps: [
         {
             name: 'add-product-consumer',
             script: 'src/AddProductConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -15,11 +17,13 @@ export default {
         {
             name: 'after-order-place-consumer',
             script: 'src/AfterOrderPlaceConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -27,11 +31,13 @@ export default {
         {
             name: 'create-admin-consumer',
             script: 'src/CreateAdminConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -39,11 +45,13 @@ export default {
         {
             name: 'create-user-consumer',
             script: 'src/CreateUserConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -51,11 +59,13 @@ export default {
         {
             name: 'product-embedding-consumer',
             script: 'src/ProductEmbeddingConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -63,11 +73,13 @@ export default {
         {
             name: 'subscription-consumers',
             script: 'src/SubscriptionConsumers.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -75,11 +87,13 @@ export default {
         {
             name: 'update-admin-consumer',
             script: 'src/UpdateAdminConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -87,11 +101,13 @@ export default {
         {
             name: 'update-product-consumer',
             script: 'src/UpdateProductConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -99,11 +115,13 @@ export default {
         {
             name: 'update-user-cart-consumer',
             script: 'src/UpdateUserCartConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
@@ -111,11 +129,13 @@ export default {
         {
             name: 'update-user-consumer',
             script: 'src/UpdateUserConsumer.ts',
-            interpreter: 'tsx',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
             instances: 1,
             autorestart: true,
             watch: false,
             max_memory_restart: '300M',
+            windowsHide: true,
             env: {
                 NODE_ENV: 'production',
             },
