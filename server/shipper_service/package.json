@@ -1,0 +1,43 @@
+{
+  "name": "shipper-service",
+  "version": "1.0.0",
+  "main": "./dist/src/index.js",
+  "type": "module",
+  "dependencies": {
+    "@clerk/backend": "^2.18.3",
+    "@clerk/types": "^4.95.0",
+    "@sanity/cli": "3.0.6",
+    "@sanity/client": "6.22.5",
+    "@types/cors": "2.8.17",
+    "@types/dotenv": "6.1.1",
+    "@types/nodemailer": "6.4.16",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "http": "0.0.1-security",
+    "kafkajs": "2.2.4",
+    "redis": "^5.8.3",
+    "tsx": "4.19.1"
+  },
+  "scripts": {
+    "build": "npx tspc",
+    "start": "tspc && node dist/index",
+    "dev": "tspc && node dist/index"
+  },
+  "keywords": [
+    "shipper_service",
+    "delivery",
+    "shipping"
+  ],
+  "author": "",
+  "license": "MIT",
+  "description": "Shipper service for managing deliveries and shipping operations",
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "22.15.34",
+    "ts-patch": "3.3.0",
+    "tsconfig-paths": "4.2.0",
+    "typescript": "5.7.3",
+    "typescript-transform-paths": "3.5.3"
+  }
+}
