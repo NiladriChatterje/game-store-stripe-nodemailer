@@ -53,7 +53,7 @@ if (cluster.isPrimary) {
     }
 } else {
     const kafka = new Kafka({
-        clientId: "xv store shipper",
+        clientId: "xv store",
         brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
         retry: {
             retries: 2,

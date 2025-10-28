@@ -78,20 +78,21 @@ services:
     ports:
      - "6379:6379"
 
-  # seller_service:
-  #   build: ./server/seller_service
-  #   hostname: seller_service
-  #   container_name: seller_service
-  #   restart: always
-  #   ports:
-  #     - "5000:5000"
-  #   environment:
-  #     KAFKA_BOOTSTRAP_SERVERS: "kafka1:19092,kafka2:19093,kafka3:19094"
-  #     REDIS_HOST: "redis"
-  #     REDIS_PORT: 6379
-  #   depends_on:
-  #     - kafka1
-  #     - kafka2
-  #     - kafka3
-  #     - redis_storage
+  seller_service:
+    build: 
+      context: ./server/seller_service
+      dockerfile: Dockerfile
+    hostname: seller_service
+    container_name: seller_service
+    restart: always
+    volumes:
+      - ./server/seller_service:/app/seller_service
+      - ./server/seller_service/node_modules:/app/seller_service/node_modules
+    ports:
+      - "5003:5003"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
   
