@@ -29,9 +29,7 @@ declare module "express-serve-static-core" {
 if (cluster.isPrimary) {
   let old_child_process: any[] = []
   setInterval(() => {
-    const child_process = spawn('curl.exe', [
-      '-X',
-      'GET',
+    const child_process = spawn('ping', [
       `http://localhost:${process.env.PORT}/`,
     ])
 
@@ -65,7 +63,7 @@ if (cluster.isPrimary) {
   const mailTransport = createTransport(mailOption);
   const kafka = new Kafka({
     clientId: "xv store",
-    brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
+    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
     retry: {
       retries: 2,
     },
@@ -79,7 +77,9 @@ if (cluster.isPrimary) {
   });
   const app: Express = express();
   const sanityClient: SanityClient = createClient(sanityConfig);
-  const redisClient = RedisClient();
+  const redisClient = RedisClient({
+    url: 'redis://redis_storage:6379'
+  });
   try {
     await redisClient.connect();
   } catch (e: Error | any) {
@@ -283,7 +283,7 @@ if (cluster.isPrimary) {
   //#endregion 
 
 
-  app.listen(process.env.PORT ?? 5003, () =>
-    console.log("listening on PORT:" + process.env.PORT)
+  app.listen(Number(process.env.PORT) || 5003, "0.0.0.0", () =>
+    console.log("listening on PORT:" + (process.env.PORT || 5003))
   );
 }

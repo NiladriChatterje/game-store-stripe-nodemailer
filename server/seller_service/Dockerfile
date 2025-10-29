@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:25.0.0-alpine
 
 # Update Alpine packages to reduce vulnerabilities
 
