@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:jod-alpine3.21
 
 # Update Alpine packages to reduce vulnerabilities
 

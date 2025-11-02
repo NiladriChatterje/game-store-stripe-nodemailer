@@ -88,9 +88,9 @@ services:
     restart: always
     volumes:
       - ./server/seller_service:/app
-      - /app/node_modules
+      - ./server/seller_service/node_modules:/app/node_modules
     ports:
-      - "5003:5003"
+      - 5003:5003
     depends_on:
       - kafka1
       - kafka2
@@ -98,7 +98,7 @@ services:
       - redis_storage
 
 
-  userData_service:
+  userdata_service:
     build:
       context: ./server/userData_service
       dockerfile: Dockerfile
@@ -107,9 +107,9 @@ services:
     restart: always
     volumes:
       - ./server/userData_service:/app
-      - /app/node_modules
+      - ./server/userData_service/node_modules:/app/node_modules
     ports:
-      - "5001:5001"
+      - 5001:5001
     depends_on:
       - kafka1
       - kafka2
@@ -126,9 +126,9 @@ services:
     restart: always
     volumes:
       - ./server/product_service:/app
-      - /app/node_modules
+      - ./server/product_service/node_modules:/app/node_modules
     ports:
-      - "5002:5002"
+      - 5002:5002
     depends_on:
       - kafka1
       - kafka2
@@ -144,9 +144,9 @@ services:
     restart: always
     volumes:
       - ./server/search_engine_service:/app
-      - /app/node_modules
+      - ./server/search_engine_service/node_modules:/app/node_modules
     ports:
-      - "5005:5005"
+      - 5005:5005
     depends_on:
       - kafka1
       - kafka2
@@ -162,9 +162,9 @@ services:
     restart: always
     volumes:
       - ./server/shipper_service:/app
-      - /app/node_modules
+      - ./server/shipper_service/node_modules:/app/node_modules
     ports:
-      - "5004:5004"
+      - 5004:5004
     depends_on:
       - kafka1
       - kafka2

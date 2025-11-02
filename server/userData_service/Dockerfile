@@ -1,8 +1,8 @@
-FROM node:25.0.0-alpine3.20
+FROM node:jod-alpine3.21
 
 WORKDIR /app
 
-COPY ./ ./
+COPY . .
 
 RUN apk update && \
     apk upgrade --no-cache
