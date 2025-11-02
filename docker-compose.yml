@@ -96,4 +96,42 @@ services:
       - kafka2
       - kafka3
       - redis_storage
+
+
+  userData_service:
+    build:
+      context: ./server/userData_service
+      dockerfile: Dockerfile
+    hostname: userData_service
+    container_name: userData_service
+    restart: always
+    volumes:
+      - ./server/userData_service:/app
+      - /app/node_modules
+    ports:
+      - "5003:5003"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+
+
+  product_service:
+    build:
+      context: ./server/product_service
+      dockerfile: Dockerfile
+    hostname: product_service
+    container_name: product_service
+    restart: always
+    volumes:
+      - ./server/product_service:/app
+      - /app/node_modules
+    ports:
+      - "5002:5002"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
   
