@@ -18,10 +18,11 @@ services:
     restart: always
     ports:
       - "9092:9092"
+      - "9095:9095"
       - "29092:29092"
     environment:
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:19092,LOCALHOST://localhost:9095,EXTERNAL://kafka1:9092,DOCKER://host.docker.internal:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
       KAFKA_BROKER_ID: 1
@@ -38,10 +39,11 @@ services:
     restart: always
     ports:
       - "9093:9093"
+      - "9096:9096"
       - "29093:29093"
     environment:
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:19093,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9093,DOCKER://host.docker.internal:29093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:19093,LOCALHOST://localhost:9096,EXTERNAL://kafka2:9093,DOCKER://host.docker.internal:29093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
       KAFKA_BROKER_ID: 2
@@ -58,10 +60,11 @@ services:
     restart: always
     ports:
       - "9094:9094"
+      - "9097:9097"
       - "29094:29094"
     environment:
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:19094,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9094,DOCKER://host.docker.internal:29094
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:19094,EXTERNAL://kafka3:9094,LOCALHOST://localhost:9097,DOCKER://host.docker.internal:29094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
       KAFKA_BROKER_ID: 3
@@ -90,7 +93,7 @@ services:
       - ./server/seller_service:/app
       - ./server/seller_service/node_modules:/app/node_modules
     ports:
-      - 5003:5003
+      - "5003:5003"
     depends_on:
       - kafka1
       - kafka2
@@ -109,7 +112,7 @@ services:
       - ./server/userData_service:/app
       - ./server/userData_service/node_modules:/app/node_modules
     ports:
-      - 5001:5001
+      - "5001:5001"
     depends_on:
       - kafka1
       - kafka2
@@ -128,30 +131,30 @@ services:
       - ./server/product_service:/app
       - ./server/product_service/node_modules:/app/node_modules
     ports:
-      - 5002:5002
+      - "5002:5002"
     depends_on:
       - kafka1
       - kafka2
       - kafka3
       - redis_storage
   
-  search_engine_service:
-    build:
-      context: ./server/search_engine_service
-      dockerfile: Dockerfile
-    hostname: search_engine_service
-    container_name: search_engine_service
-    restart: always
-    volumes:
-      - ./server/search_engine_service:/app
-      - ./server/search_engine_service/node_modules:/app/node_modules
-    ports:
-      - 5005:5005
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
+  # search_engine_service:
+  #   build:
+  #     context: ./server/search_engine_service
+  #     dockerfile: Dockerfile
+  #   hostname: search_engine_service
+  #   container_name: search_engine_service
+  #   restart: always
+  #   volumes:
+  #     - ./server/search_engine_service:/app
+  #     - ./server/search_engine_service/node_modules:/app/node_modules
+  #   ports:
+  #     - "5005:5005"
+  #   depends_on:
+  #     - kafka1
+  #     - kafka2
+  #     - kafka3
+  #     - redis_storage
 
   shipper_service:
     build:
@@ -164,7 +167,7 @@ services:
       - ./server/shipper_service:/app
       - ./server/shipper_service/node_modules:/app/node_modules
     ports:
-      - 5004:5004
+      - "5004:5004"
     depends_on:
       - kafka1
       - kafka2

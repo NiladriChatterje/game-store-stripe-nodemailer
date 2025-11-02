@@ -158,7 +158,8 @@ if (cluster.isPrimary) {
         await producer.disconnect();
       }
       catch (err) {
-
+        console.log("Error in admin creation endpoint: ", err);
+        res.status(500).json("Internal server error! Please try again later.");
       };
     }
   );

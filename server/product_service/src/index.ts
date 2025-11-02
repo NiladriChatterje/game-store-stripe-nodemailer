@@ -28,7 +28,7 @@ if (cluster.isPrimary) {
 
   let old_child_process: any[] = []
   setInterval(() => {
-    const child_process = spawn('curl.exe', [
+    const child_process = spawn('curl', [
       '-X',
       'GET',
       `http://localhost:${process.env.PORT}/`,
@@ -54,7 +54,9 @@ if (cluster.isPrimary) {
   }
 } else {
   const sanityClient = SanityClient(sanityConfig);
-  const redisClient: RedisClientType = RedisClient();
+  const redisClient: RedisClientType = RedisClient({
+    url: 'redis://redis_storage:6379'
+  });
   //#region clerk_middleware
   const verifyClerkToken = async (req: Request<{}, {}, ProductType>, res: Response, next: NextFunction) => {
     try {
@@ -108,7 +110,7 @@ if (cluster.isPrimary) {
     const app: Express = express();
     const kafka: Kafka = new Kafka({
       clientId: 'xv-store',
-      brokers: ['localhost:9092', 'localhost:9093', 'localhost:9094']
+      brokers: ['localhost:9095', 'localhost:9096', 'localhost:9097']
     });
     await redisClient.connect();
     app.use(cors());

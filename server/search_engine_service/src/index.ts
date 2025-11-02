@@ -39,7 +39,9 @@ if (cluster.isPrimary) {
     baseUrl: 'http://localhost:11434/',
   });
 
-  const redisC = redisClient();
+  const redisC = redisClient({
+    url: 'redis://redis_storage:6379'
+  });
   redisC.on('error', err => console.log('Redis Client Error', err));
 
   try {

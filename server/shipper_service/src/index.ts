@@ -54,7 +54,7 @@ if (cluster.isPrimary) {
 } else {
     const kafka = new Kafka({
         clientId: "xv store",
-        brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
+        brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
         retry: {
             retries: 2,
         },
@@ -68,7 +68,9 @@ if (cluster.isPrimary) {
 
     const app: Express = express();
     const sanityClient: SanityClient = createClient(sanityConfig);
-    const redisClient = RedisClient();
+    const redisClient = RedisClient({
+        url: 'redis://redis_storage:6379'
+    });
 
     try {
         await redisClient.connect();

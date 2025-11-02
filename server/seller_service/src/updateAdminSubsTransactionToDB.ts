@@ -9,9 +9,9 @@ const sanityClient: SanityClient = createClient(sanityConfig);
 const kafka = new Kafka({
   clientId: "xv-store",
   brokers: [
-    process.env.BROKER_HOST_1 ?? "localhost:9092",
-    process.env.BROKER_HOST_2 ?? "localhost:9093",
-    process.env.BROKER_HOST_3 ?? "localhost:9094",
+    process.env.BROKER_HOST_1 ?? "localhost:9095",
+    process.env.BROKER_HOST_2 ?? "localhost:9096",
+    process.env.BROKER_HOST_3 ?? "localhost:9097",
   ],
 });
 

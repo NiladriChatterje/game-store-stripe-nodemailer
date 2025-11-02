@@ -5,7 +5,7 @@ import { AdminFieldsType } from "@declaration/AdminFieldType";
 
 const kafka: Kafka = new Kafka({
   clientId: "xv-store",
-  brokers: ["localhost:9092", "localhost:9093", "localhost:9094"],
+  brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
 });
 
 async function updateAdminRecord() {
