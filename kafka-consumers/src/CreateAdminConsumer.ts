@@ -34,7 +34,7 @@ async function createAdmin() {
       sanityClient
         ?.createIfNotExists({
           _type: "admin",
-          _id: user._id,
+          _id: `admin-${user._id}`, // Fix: Prefix admin IDs to avoid collision with user IDs
           username: user?.username,
           email: user?.email,
           geoPoint: {
@@ -49,15 +49,16 @@ async function createAdmin() {
           },
         })
         .then(async (onfulfilled) => {
-
           console.log(`<< data ${onfulfilled.username} written >>`);
+          console.log("onfulfilled::\n", onfulfilled);
+          console.log("Document type returned:", onfulfilled._type); // Debug log to verify type
           consumer
             .commitOffsets([{ topic, offset: message.offset, partition }])
             .then(async () => {
               await heartbeat(); // to let the broker know that the consumer in the group is still alive
             });
           await redisC.hSet(`hashSet:admin:details`, onfulfilled._id, JSON.stringify(onfulfilled));
-          await redisC.sadd(`set:admin:id`, onfulfilled.username);
+          await redisC.sAdd(`set:admin:id`, onfulfilled.username);
         })
         .catch((err) => console.log(err));
   }

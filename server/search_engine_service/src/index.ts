@@ -13,7 +13,7 @@ dotenv.config();
 
 if (cluster.isPrimary) {
   setInterval(() => {
-    let p = spawn("curl", ["-X", "GET", "http://localhost:5005/"]);
+    let p = spawn("ping", ["http://localhost:5005/"]);
     p.kill();
   }, 60000);
 

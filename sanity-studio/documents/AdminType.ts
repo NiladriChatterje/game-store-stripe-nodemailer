@@ -1,4 +1,4 @@
-import {defineArrayMember, defineField, defineType} from 'sanity'
+import { defineArrayMember, defineField, defineType } from 'sanity'
 
 const AdminType = defineType({
   name: 'admin',
@@ -38,7 +38,7 @@ const AdminType = defineType({
       name: 'subscriptionPlan',
       title: 'Subscription',
       type: 'array',
-      of: [{type: 'subscription'}],
+      of: [{ type: 'subscription' }],
       validation: (rule) => rule.warning('Must be updated'),
     }),
     defineField({
@@ -50,13 +50,13 @@ const AdminType = defineType({
       name: 'ordersServed',
       title: 'Orders Served',
       type: 'array',
-      of: [{type: 'reference', to: {type: 'order'}}],
+      of: [{ type: 'reference', to: { type: 'order' } }],
     }),
     defineField({
       name: 'productReferenceAfterListing',
       title: 'Product Reference',
       type: 'array',
-      of: [defineArrayMember({type: 'reference', to: [{type: 'product'}]})],
+      of: [defineArrayMember({ type: 'reference', to: [{ type: 'product' }] })],
     }),
   ],
 })

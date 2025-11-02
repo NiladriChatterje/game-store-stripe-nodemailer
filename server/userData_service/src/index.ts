@@ -27,10 +27,8 @@ declare global {
 if (cluster.isPrimary) {
   let old_child_process: any[] = []
   setInterval(() => {
-    const child_process = spawn('curl.exe', [
-      '-X',
-      'GET',
-      `http://localhost:${process.env.PORT ?? 5001}/`,
+    const child_process = spawn('ping', [
+      `http://localhost:${process.env.PORT ?? 5001}/`
     ])
 
     while (old_child_process.length > 0) {

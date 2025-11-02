@@ -271,14 +271,21 @@ if (cluster.isPrimary) {
           const cachedMetrics = await redisClient.hGet(`dashboardMetrics:admin:${adminId}`, 'metrics');
           if (cachedMetrics) {
             console.log("<Redis dashboard metrics hit>");
-            res.json(JSON.parse(cachedMetrics));
+            console.log(cachedMetrics);
+            res.status(200).json(JSON.parse(cachedMetrics));
             return;
           }
         }
 
         // Get admin data with orders and products
+        // First, let's try to find the admin with better error handling and debug logging
+        console.log(`Searching for admin with ID: ${adminId}`);
+
         const adminData = await sanityClient.fetch(
           `*[_type=="admin" && _id==$adminId][0]{
+            _id,
+            username,
+            email,
             ordersServed[]->{
               _id,
               amount,
@@ -296,6 +303,8 @@ if (cluster.isPrimary) {
           }`,
           { adminId }
         );
+
+        console.log(`Admin query result:`, adminData);
 
         if (!adminData) {
           res.status(404).json({ error: 'Admin not found' });
