@@ -109,7 +109,7 @@ services:
       - ./server/userData_service:/app
       - /app/node_modules
     ports:
-      - "5003:5003"
+      - "5001:5001"
     depends_on:
       - kafka1
       - kafka2
@@ -135,3 +135,38 @@ services:
       - kafka3
       - redis_storage
   
+  search_engine_service:
+    build:
+      context: ./server/search_engine_service
+      dockerfile: Dockerfile
+    hostname: search_engine_service
+    container_name: search_engine_service
+    restart: always
+    volumes:
+      - ./server/search_engine_service:/app
+      - /app/node_modules
+    ports:
+      - "5005:5005"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+
+  shipper_service:
+    build:
+      context: ./server/shipper_service
+      dockerfile: Dockerfile
+    hostname: shipper_service
+    container_name: shipper_service
+    restart: always
+    volumes:
+      - ./server/shipper_service:/app
+      - /app/node_modules
+    ports:
+      - "5004:5004"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
