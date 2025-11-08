@@ -297,9 +297,15 @@ if (cluster.isPrimary) {
     async (req: Request<{ _id: string }>, res: Response) => {
       try {
         const adminId = req.params._id;
+        const { fromDate, toDate } = req.query;
 
-        // Check Redis cache first
-        if (redisClient.isOpen) {
+        // Create cache key that includes date parameters if provided
+        const cacheKey = fromDate && toDate
+          ? `dashboardMetrics:admin:${adminId}:${fromDate}:${toDate}`
+          : `dashboardMetrics:admin:${adminId}`;
+
+        // Check Redis cache first (skip cache for date-filtered requests for now)
+        if (redisClient.isOpen && !fromDate && !toDate) {
           const cachedMetrics = await redisClient.hGet(`dashboardMetrics:admin:${adminId}`, 'metrics');
           if (cachedMetrics) {
             console.log("<Redis dashboard metrics hit>");
@@ -312,29 +318,44 @@ if (cluster.isPrimary) {
         // Get admin data with orders and products
         // First, let's try to find the admin with better error handling and debug logging
         console.log(`Searching for admin with ID: ${adminId}`);
+        console.log(`Date filters - From: ${fromDate}, To: ${toDate}`);
 
-        const adminData = await sanityClient.fetch(
-          `*[_type=="admin" && _id==$adminId][0]{
+        // Build the query with optional date filtering
+        let query = `*[_type=="admin" && _id==$adminId][0]{
+          _id,
+          username,
+          email,
+          ordersServed[]->`;
+
+        // Add date filtering to orders if dates are provided
+        if (fromDate && toDate) {
+          query += `[_createdAt >= $fromDate && _createdAt <= $toDate]`;
+        }
+
+        query += `{
             _id,
-            username,
-            email,
-            ordersServed[]->{
-              _id,
-              amount,
-              status,
-              quantity,
-              customer->{username},
-              product[]->{price}
-            },
-            productReferenceAfterListing[]->{
-              _id,
-              productName,
-              price,
-              quantity
-            }
-          }`,
-          { adminId }
-        );
+            _createdAt,
+            amount,
+            status,
+            quantity,
+            customer->{username},
+            product[]->{price}
+          },
+          productReferenceAfterListing[]->{
+            _id,
+            productName,
+            price,
+            quantity
+          }
+        }`;
+
+        const queryParams: any = { adminId };
+        if (fromDate && toDate) {
+          queryParams.fromDate = fromDate;
+          queryParams.toDate = toDate;
+        }
+
+        const adminData = await sanityClient.fetch(query, queryParams);
 
         console.log(`Admin query result:`, adminData);
 
@@ -402,13 +423,25 @@ if (cluster.isPrimary) {
           }
         };
 
-        // Cache the result for 1 hour
-        if (redisClient.isOpen) {
+        // Cache the result for 1 hour (only cache non-filtered requests)
+        if (redisClient.isOpen && !fromDate && !toDate) {
           await redisClient.hSet(`dashboardMetrics:admin:${adminId}`, 'metrics', JSON.stringify(metrics));
           await redisClient.expire(`dashboardMetrics:admin:${adminId}`, 3600);
         }
 
-        res.status(200).json(metrics);
+        // Add date range info to response if filtering was applied
+        const response = {
+          ...metrics,
+          ...(fromDate && toDate && {
+            dateRange: {
+              from: fromDate,
+              to: toDate,
+              filtered: true
+            }
+          })
+        };
+
+        res.status(200).json(response);
       } catch (error: any) {
         console.error('Dashboard metrics error:', error);
         res.status(500).json({ error: error.message });
