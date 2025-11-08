@@ -2,11 +2,12 @@ import { EachMessagePayload, Kafka } from 'kafkajs';
 import { availableParallelism } from 'node:os';
 import { createClient, SanityClient } from '@sanity/client';
 import dotenv from 'dotenv';
+import shortid from 'shortid';
 dotenv.config();
 
 const kafka = new Kafka({
     clientId: 'xv-store',
-    brokers: ['localhost:9095', 'localhost:9096']
+    brokers: ['localhost:9095', 'localhost:9096', 'localhost:9097'],
 });
 
 const sanityConfig = {
@@ -23,12 +24,16 @@ async function init() {
     const consumers = [];
     for (let i = 0; i < availableParallelism(); i++)
         consumers.push(kafka.consumer({
-            groupId: 'subscription-transaction',
+            groupId: 'seller-subscription-transaction',
         }));
 
     async function handleMessage({ message }: EachMessagePayload) {
-        const { _id, subscription } = JSON.parse(message.value.toString())
-        sanityClient.patch(_id).insert('after', 'subscriptionPlan', [subscription])
+        const { _id, subscriptionPlan } = JSON.parse(message.value.toString())
+        console.log(subscriptionPlan)
+        sanityClient.patch(_id).append('subscriptionPlan', [{
+            _key: shortid(),
+            ...subscriptionPlan
+        }])
             .commit()//need to check documentation
     }
 

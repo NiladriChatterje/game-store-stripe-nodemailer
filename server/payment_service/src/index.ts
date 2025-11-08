@@ -50,7 +50,7 @@ if (cluster.isPrimary) {
     const app: Express = express();
     const kafka = new Kafka({
         clientId: 'xv-store',
-        brokers: ['localhost:9095', 'localhost:9096', 'localhost:9097']
+        brokers: ['kafka1:9092', 'kafka2:9093', 'kafka3:9094']
     })
 
     const transport = nodemailer.createTransport({
@@ -74,7 +74,7 @@ if (cluster.isPrimary) {
             // Verify the token
             const payload = await verifyToken(token, {
                 secretKey: process.env.CLERK_SECRET_KEY,
-                clockSkewInMs: 60000
+                clockSkewInMs: 300000 // Increased to 5 minutes to handle clock skew issues
             });
             // Add user info to request object
             req.auth = payload;
@@ -129,21 +129,17 @@ if (cluster.isPrimary) {
         })
 
 
-    app.post('/admin-subscription',
+    app.post('/seller-subscription',
         verifyClerkToken,
-        async (req: Request<{}, {}, { _id: string, subscription: Subscription }>, res: Response, next: NextFunction) => {
-
-            next()
-        },
-        async (req: Request<{}, {}, { _id: string, subscription: Subscription }>, res: Response) => {
+        async (req: Request<{}, {}, { _id: string, subscriptionPlan: Subscription }>, res: Response) => {
             try {
-                const { _id, subscription } = req.body;
+                const { _id, subscriptionPlan } = req.body;
                 const producer: Producer = kafka.producer();
                 await producer.connect();
                 await producer.send(
                     {
-                        topic: 'update-admin',
-                        messages: [{ value: JSON.stringify({ _id, subscription }) }]
+                        topic: 'admin-update-topic',
+                        messages: [{ value: JSON.stringify({ _id, subscriptionPlan }) }]
                     }
                 );
                 await producer.disconnect()

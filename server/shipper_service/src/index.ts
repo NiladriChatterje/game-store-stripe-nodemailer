@@ -26,9 +26,7 @@ declare module "express-serve-static-core" {
 if (cluster.isPrimary) {
     let old_child_process: any[] = []
     setInterval(() => {
-        const child_process = spawn('curl.exe', [
-            '-X',
-            'GET',
+        const child_process = spawn('ping', [
             `http://localhost:${process.env.PORT}/`,
         ])
 

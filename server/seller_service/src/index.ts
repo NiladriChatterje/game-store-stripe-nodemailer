@@ -107,7 +107,7 @@ if (cluster.isPrimary) {
       }
       const payload = await verifyToken(token, {
         secretKey: process.env.CLERK_SECRET_KEY,
-        clockSkewInMs: 60000
+        clockSkewInMs: 300000 // Increased to 5 minutes to handle clock skew issues
       });
 
       req.auth = payload;
@@ -120,6 +120,30 @@ if (cluster.isPrimary) {
   };
   //#endregion
 
+
+  //#region Helper function to check subscription validity
+  function checkSubscriptionValidity(adminData: AdminFieldsType | null): boolean {
+    if (!adminData || !adminData.subscriptionPlan || adminData.subscriptionPlan.length === 0) {
+      return false;
+    }
+
+    // Check if any subscription plan has a valid future expiration date
+    const currentTime = new Date().getTime();
+    console.log("inside checkSubscriptionValidity function ::: ", adminData.subscriptionPlan);
+    for (const plan of adminData.subscriptionPlan) {
+      // Use the correct field name from Sanity schema: planSchemaList
+      if (plan?.planSchemaList?.expireDate) {
+        const expireTime = new Date(plan.planSchemaList.expireDate).getTime();
+        console.log("Checking plan with expire date:", plan.planSchemaList.expireDate);
+        if (expireTime > currentTime) {
+          return true; // Found at least one valid plan
+        }
+      }
+    }
+
+    return false; // No valid plans found
+  }
+  //#endregion
 
   //#region ENDPOINTS
   //ping self to keep server awake
@@ -176,7 +200,9 @@ if (cluster.isPrimary) {
           const result = await redisClient.hGet("hashSet:admin:details", req.params._id);
           if (result) {
             console.log("<Redis admin hit>")
-            res.json(JSON.parse(result));
+            const adminData = JSON.parse(result);
+            const isPlanActive = checkSubscriptionValidity(adminData);
+            res.json({ ...adminData, isPlanActive });
             return;
           }
         }
@@ -184,9 +210,15 @@ if (cluster.isPrimary) {
           `*[_type=='admin' && _id=='${req.params._id}'][0]`
         );
         console.log(result)
-        res.status(200).json(result);
+
+        // Check subscription validity
+        const isPlanActive = checkSubscriptionValidity(result);
+
+        const responseData = { ...result, isPlanActive };
+        res.status(200).json(responseData);
+
         if (req.params._id.length > 0) {
-          await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(result));
+          await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(responseData));
           await redisClient.sAdd("set:admin:id", req.params._id)
         }
         return;

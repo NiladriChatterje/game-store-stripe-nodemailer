@@ -14,4 +14,6 @@ RUN addgroup -S paymentGroup && adduser -S payment -G paymentGroup
 # change User to payment
 USER payment
 
+EXPOSE 5000
+
 CMD ["npm","run","start"]
