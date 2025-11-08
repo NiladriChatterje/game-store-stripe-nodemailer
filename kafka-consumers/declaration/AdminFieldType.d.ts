@@ -8,7 +8,7 @@ export declare interface AdminFieldsType {
   gstin?: string;
   phone?: number;
   email: string | null | undefined;
-  SubscriptionPlan?: subscription[] | undefined | null;
+  subscriptionPlan?: subscription[] | undefined | null;
   address: {
     pincode: string;
     county: string;
