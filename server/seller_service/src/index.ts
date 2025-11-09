@@ -449,6 +449,75 @@ if (cluster.isPrimary) {
     }
   );
 
+  // Fetch products endpoint - returns array of product objects for a seller
+  app.get(
+    "/:_id/fetch-products",
+    verifyClerkToken,
+    async (req: Request<{ _id: string }>, res: Response) => {
+      try {
+        const adminId = req.params._id;
+
+        // Check Redis cache first
+        if (redisClient.isOpen) {
+          const cachedProducts = await redisClient.lRange(`productList:admin:${adminId}`, 0, -1);
+          if (cachedProducts && cachedProducts.length > 0) {
+            console.log("<Redis products hit>");
+            const products = cachedProducts.map(product => JSON.parse(product));
+            res.status(200).json(products);
+            return;
+          }
+        }
+
+        // Fetch from Sanity if not in cache
+        const query = `*[_type=="product" && seller._ref==$adminId]{
+          _id,
+          productName,
+          category,
+          eanUpcIsbnGtinAsinType,
+          eanUpcNumber,
+          quantity,
+          pincode,
+          currency,
+          price,
+          keywords,
+          imagesBase64,
+          seller,
+          productDescription,
+          modelNumber,
+          _createdAt,
+          _updatedAt
+        }`;
+
+        const products = await sanityClient.fetch(query, { adminId });
+
+        console.log(`Fetched ${products.length} products for admin ${adminId}`);
+
+        // Cache the results in Redis
+        if (redisClient.isOpen && products.length > 0) {
+          const pipeline = redisClient.multi();
+
+          // Clear existing cache
+          pipeline.del(`productList:admin:${adminId}`);
+
+          // Add all products to the list
+          products.forEach((product: any) => {
+            pipeline.rPush(`productList:admin:${adminId}`, JSON.stringify(product));
+          });
+
+          // Set expiration (1 hour)
+          pipeline.expire(`productList:admin:${adminId}`, 3600);
+
+          await pipeline.exec();
+        }
+
+        res.status(200).json(products);
+      } catch (error: any) {
+        console.error('Fetch products error:', error);
+        res.status(500).json({ error: error.message });
+      }
+    }
+  );
+
   app.post("/fetch-mail-otp", (req: Request, res: Response) => {
     const OTP = Math.trunc(Math.random() * 10 ** 6);
     const worker = new Worker("./dist/EmailWorker.js", {
