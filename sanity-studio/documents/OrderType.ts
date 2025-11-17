@@ -17,6 +17,12 @@ export const OrderType = defineType({
 
         }),
         defineField({
+            name: 'shipperId',
+            title: 'Shipper',
+            type: 'reference',
+            to: { type: 'shipper' },
+        }),
+        defineField({
             name: 'quantity',
             type: 'number',
             validation: rule => rule.required().positive().min(1)

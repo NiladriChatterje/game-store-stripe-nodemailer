@@ -82,6 +82,14 @@ services:
     ports:
      - "6379:6379"
 
+  redis_location:
+    image: redis
+    hostname: redis_location
+    container_name: redis_location
+    restart: always
+    ports:
+     - "6380:6379"
+
   seller_service:
     build:
       context: ./server/seller_service

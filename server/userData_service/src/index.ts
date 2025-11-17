@@ -184,6 +184,61 @@ if (cluster.isPrimary) {
     }
   );
 
+  // Fetch delivery orders for a user (orders with status: dispatched, shipping, shipped)
+  app.post(
+    "/delivery-orders/:userId",
+    verifyUserToken,
+    async (req: Request<{ userId: string }>, res: Response) => {
+      console.log("fetch-delivery-orders for user:", req.params.userId);
+      try {
+        // Query orders from Sanity where customer references the user and status is dispatched, shipping, or shipped
+        const deliveryOrders = await sanityClient.fetch(`
+          *[_type=="order" && customer._ref == $userId && status in ["dispatched", "shipping", "shipped"]] {
+            _id,
+            customer->{
+              _id,
+              username,
+              email,
+              geoPoint,
+              address,
+              cart
+            },
+            product[]->{
+              _id,
+              productName,
+              category,
+              eanUpcIsbnGtinAsinType,
+              eanUpcNumber,
+              price,
+              pincode,
+              currency,
+              imagesBase64,
+              productDescription,
+              quantity,
+              keywords
+            },
+            quantity,
+            transactionId,
+            orderId,
+            paymentSignature,
+            amount,
+            status,
+            _createdAt,
+            expectedDelivery
+          } | order(_createdAt desc)
+        `, {
+          userId: req.params.userId
+        });
+
+        console.log(`Found ${deliveryOrders.length} delivery orders for user ${req.params.userId}`);
+        res.json(deliveryOrders);
+      } catch (error: Error | any) {
+        console.error("Error fetching delivery orders:", error);
+        res.status(500).json({ error: error.message });
+      }
+    }
+  );
+
   app.patch(
     "/update-user-info",
     verifyUserToken,
