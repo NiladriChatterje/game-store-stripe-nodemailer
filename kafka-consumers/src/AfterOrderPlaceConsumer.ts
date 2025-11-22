@@ -117,11 +117,47 @@ async function main() {
                 }
             })
 
+            // ✅ Create Order Document in Sanity
+            const orderDocument = {
+                _id: uuid(),
+                _type: 'order',
+                customer: { _ref: productPayload.customer },
+                product: [{ _ref: productPayload.product }],
+                quantity: productPayload.quantity,
+                transactionId: productPayload.transactionId,
+                orderId: productPayload.orderId,
+                paymentSignature: productPayload.paymentSignature,
+                amount: productPayload.amount,
+                status: 'orderPlaced'
+            };
+
+            const createdOrder = await sanityClient.create(orderDocument);
+            console.log('Order created successfully:', {
+                orderId: createdOrder._id,
+                customerId: productPayload.customer,
+                productId: productPayload.product,
+                amount: productPayload.amount,
+                status: 'orderPlaced'
+            });
+
             consumer.commitOffsets([
                 { topic, partition, offset: message.offset },
             ]);
         } catch (error: Error | any) {
+            console.error('Failed to process order message:', {
+                error: error?.message,
+                stack: error?.stack,
+                payload: message.value.toString()
+            });
 
+            // Commit offset even on error to prevent infinite retry loop
+            try {
+                consumer.commitOffsets([
+                    { topic, partition, offset: message.offset },
+                ]);
+            } catch (commitError) {
+                console.error('Failed to commit offset after error:', commitError);
+            }
         }
     }
 
