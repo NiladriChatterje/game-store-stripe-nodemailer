@@ -73,19 +73,28 @@ if (cluster.isPrimary) {
     const token = req.headers.authorization?.split(" ")[1];
     try {
       if (!token) {
+        console.log('❌ No token provided in Authorization header');
         res.status(401).json({ error: 'No token provided' });
         return;
       }
+
+      console.log('🔍 Verifying token:', token.substring(0, 20) + '...');
+
       const payload = await verifyToken(token, {
         secretKey: process.env.CLERK_SECRET_KEY,
-        clockSkewInMs: 60000
+        clockSkewInMs: 300000  // Increased from 60000 to 300000 (5 minutes) for Docker clock skew tolerance
       });
 
+      console.log('Token verified successfully for user:', payload.sub);
       req.auth = payload;
       next();
     }
     catch (error) {
-      console.error('Token verification failed:', error);
+      console.error('Token verification failed:', {
+        error: (error as Error)?.message,
+        code: (error as any)?.code,
+        stack: (error as Error)?.stack
+      });
       res.status(403).json({ error: 'Invalid token' });
       return;
     }
