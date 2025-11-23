@@ -10,11 +10,30 @@ export const OrderType = defineType({
             type: 'reference',
             to: [{ type: 'user' }]
         }),
+        //reason is that after the order has been placed,
+        //all products might not be available from the same seller
+        //say 4 products is stocked by same seller but the other 
+        // 2 might be from different sellers
         defineField({
             name: 'product',
             type: 'array',
-            of: [{ type: 'reference', to: [{ type: 'product' }] }]
-
+            of: [{
+                type: 'object',
+                fields: [
+                    defineField({
+                        name: 'seller',
+                        type: 'reference',
+                        to: [{ type: 'admin' }],
+                        validation: rule => rule.required()
+                    }),
+                    defineField({
+                        name: 'products',
+                        type: 'array',
+                        of: [{ type: 'reference', to: [{ type: 'product' }] }],
+                        validation: rule => rule.required()
+                    })
+                ]
+            }]
         }),
         defineField({
             name: 'shipperId',
