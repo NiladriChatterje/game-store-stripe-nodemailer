@@ -140,6 +140,98 @@ async function main() {
                 status: 'orderPlaced'
             });
 
+            // ✅ ALGORITHM: Find and assign sellers with available products
+            // Step 1: Fetch the product details
+            const productDetails: ProductType = await sanityClient.fetch(`*[_type == 'product' && _id == "${productPayload.product}"][0]`);
+
+            if (!productDetails) {
+                throw new Error(`Product not found: ${productPayload.product}`);
+            }
+
+            // Step 2: Find all sellers that have this product in stock for the given pincode
+            const availableSellers = await sanityClient.fetch(`
+                *[_type == 'seller_product_details' 
+                    && product_id == "${productPayload.product}"
+                    && quantity >= ${productPayload.quantity}
+                    && pincode == "${productPayload.pincode}"
+                ] | order(distance asc) {
+                    _id,
+                    seller,
+                    product_id,
+                    quantity,
+                    pincode,
+                    "distance": geo::distance(geoPoint, geo::latLng(${productPayload.geoPoint.lat}, ${productPayload.geoPoint.lng}))
+                }
+            `);
+
+            // Step 3: If no sellers available, find closest seller and create pending order
+            if (!availableSellers || availableSellers.length === 0) {
+                console.warn(`No sellers available for product ${productPayload.product} at pincode ${productPayload.pincode}`);
+
+                // Find closest seller regardless of stock
+                const closestSeller = await sanityClient.fetch(`
+                    *[_type == 'seller_product_details' 
+                        && product_id == "${productPayload.product}"
+                    ] | order(geo::distance(geoPoint, geo::latLng(${productPayload.geoPoint.lat}, ${productPayload.geoPoint.lng})) asc)[0]
+                `);
+
+                if (closestSeller && closestSeller.seller) {
+                    // Create OrderAcceptedBySeller with pending status
+                    const pendingSellerOrder = {
+                        _type: 'orderAcceptedBySeller',
+                        order: { _ref: createdOrder._id },
+                        seller: { _ref: closestSeller.seller },
+                        products: [{
+                            product: { _ref: productPayload.product },
+                            quantity: productPayload.quantity,
+                            price: productDetails.price?.pdtPrice ?? productPayload.amount / productPayload.quantity
+                        }],
+                        status: 'pending',
+                        totalAmount: productPayload.amount,
+                        notes: `Order assigned to closest seller due to stock unavailability at pincode ${productPayload.pincode}`
+                    };
+
+                    const createdSellerOrder = await sanityClient.create(pendingSellerOrder);
+                    console.log('Pending seller order created:', createdSellerOrder._id);
+                }
+            } else {
+                // Step 4: Assign to the closest available seller
+                const selectedSeller = availableSellers[0];
+
+                // Create OrderAcceptedBySeller document
+                const sellerOrderDocument = {
+                    _type: 'orderAcceptedBySeller',
+                    order: { _ref: createdOrder._id },
+                    seller: { _ref: selectedSeller.seller },
+                    products: [{
+                        product: { _ref: productPayload.product },
+                        quantity: productPayload.quantity,
+                        price: productDetails.price?.pdtPrice ?? productPayload.amount / productPayload.quantity
+                    }],
+                    status: 'pending',
+                    totalAmount: productPayload.amount,
+                    notes: `Automatically assigned to closest available seller at distance ${selectedSeller.distance?.toFixed(2)} km`
+                };
+
+                const createdSellerOrder = await sanityClient.create(sellerOrderDocument);
+                console.log('Seller order assigned successfully:', {
+                    sellerOrderId: createdSellerOrder._id,
+                    sellerId: selectedSeller.seller,
+                    orderId: createdOrder._id,
+                    distance: selectedSeller.distance?.toFixed(2),
+                    status: 'pending'
+                });
+
+                // Update the seller's product quantity
+                await sanityClient.patch(selectedSeller._id)
+                    .set({
+                        quantity: selectedSeller.quantity - productPayload.quantity
+                    })
+                    .commit();
+
+                console.log(`Updated seller product quantity: ${selectedSeller._id}`);
+            }
+
             consumer.commitOffsets([
                 { topic, partition, offset: message.offset },
             ]);
