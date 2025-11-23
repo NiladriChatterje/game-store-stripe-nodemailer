@@ -225,7 +225,7 @@ if (cluster.isPrimary) {
               imagesBase64,
               eanUpcNumber,
               price,
-              'quantity':quantity[pincode == "${pincode}"][0].quantity
+              "quantity":quantity[pincode == "${pincode}"][0].quantity
               }`);
             res.status(200).json(result);
             return;
