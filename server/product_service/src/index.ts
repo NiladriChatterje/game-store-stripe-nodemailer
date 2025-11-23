@@ -198,13 +198,13 @@ if (cluster.isPrimary) {
 
     //fetch particular product info for user display
     app.get(
-      "/fetch-product-detail/:productId",
+      "/fetch-product-detail/:pincode/:productId",
       async (
-        req: Request<{ productId: string; }>,
+        req: Request<{ productId: string; pincode: string }>,
         res: Response
       ) => {
         res.setHeader("Content-Type", "application/json");
-
+        const pincode = req.params.pincode;
         const productId: string | undefined = req.params.productId
         if (productId) {
           try {
@@ -215,11 +215,23 @@ if (cluster.isPrimary) {
                 return;
               }
             }
-            const result: ProductType = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]`);
+            const result: ProductType = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]{
+              _id,
+              _rev,
+              productName,
+              productDescription,
+              modelNumber,
+              category,
+              imagesBase64,
+              eanUpcNumber,
+              price,
+              'quantity':quantity[pincode == "${pincode}"][0].quantity
+              }`);
             res.status(200).json(result);
             return;
           }
           catch (err) {
+            console.log(err)
             res.status(502).json({ error: "Service down!" });
             return;
           }
