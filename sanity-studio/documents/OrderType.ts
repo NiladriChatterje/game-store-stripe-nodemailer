@@ -62,6 +62,45 @@ export const OrderType = defineType({
             },
             initialValue: 'orderPlaced'
         }),
+        defineField({
+            name: 'fulfilledQuantity',
+            title: 'Fulfilled Quantity',
+            type: 'number',
+            description: 'Actual quantity that could be fulfilled (for partial orders)',
+            initialValue: undefined
+        }),
+        defineField({
+            name: 'refundAmount',
+            title: 'Refund Amount',
+            type: 'number',
+            description: 'Amount to be refunded for unfulfilled items'
+        }),
+        defineField({
+            name: 'refundStatus',
+            title: 'Refund Status',
+            type: 'string',
+            description: 'Status of refund: pending | processing | completed | failed',
+            options: {
+                list: [
+                    { title: 'Pending', value: 'pending' },
+                    { title: 'Processing', value: 'processing' },
+                    { title: 'Completed', value: 'completed' },
+                    { title: 'Failed', value: 'failed' }
+                ]
+            }
+        }),
+        defineField({
+            name: 'partialFulfillmentReason',
+            title: 'Partial Fulfillment Reason',
+            type: 'text',
+            description: 'Reason why the order was only partially fulfilled'
+        }),
+        defineField({
+            name: 'razorpayRefundId',
+            title: 'Razorpay Refund ID',
+            type: 'string',
+            description: 'Refund ID from Razorpay payment gateway'
+        })
 
     ]
 });

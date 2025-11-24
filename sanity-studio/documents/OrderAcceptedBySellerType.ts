@@ -90,6 +90,19 @@ export const OrderAcceptedBySellerType = defineType({
             title: 'Seller Notes',
             type: 'text',
             description: 'Any additional notes from the seller'
+        }),
+        defineField({
+            name: 'isPartialFulfillment',
+            title: 'Is Partial Fulfillment',
+            type: 'boolean',
+            description: 'Whether this is a partial fulfillment (order split across sellers)',
+            initialValue: false
+        }),
+        defineField({
+            name: 'fulfilledAt',
+            title: 'Fulfilled At',
+            type: 'datetime',
+            description: 'When the seller fulfilled the order'
         })
     ]
 });

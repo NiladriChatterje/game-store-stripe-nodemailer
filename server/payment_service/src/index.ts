@@ -179,6 +179,121 @@ if (cluster.isPrimary) {
             })
         });
 
+    // ✅ REFUND ENDPOINT - Process refunds for partial/failed orders
+    app.post('/process-refund',
+        verifyClerkToken,
+        async (req: Request<{}, {}, {
+            orderId: string;
+            transactionId: string;
+            refundAmount: number;
+            reason: string;
+            customerEmail: string;
+        }>, res: Response) => {
+            try {
+                const { orderId, transactionId, refundAmount, reason, customerEmail } = req.body;
+
+                // Validate refund amount
+                if (!refundAmount || refundAmount <= 0) {
+                    res.status(400).json({
+                        status: 400,
+                        error: {
+                            message: 'Invalid refund amount'
+                        }
+                    });
+                    return;
+                }
+
+                // Create Razorpay client
+                const razorpay = new Razorpay({
+                    key_id: process.env.RAZORPAY_PUBLIC_KEY || '',
+                    key_secret: process.env.RAZORPAY_SECRET_KEY
+                });
+
+                try {
+                    // Process refund through Razorpay
+                    const refundResponse: any = await razorpay.payments.refund(transactionId, {
+                        amount: Math.round(refundAmount * 100), // Convert to paise
+                        notes: {
+                            orderId: orderId,
+                            reason: reason
+                        }
+                    });
+
+                    console.log('Refund processed successfully:', {
+                        orderId,
+                        refundId: refundResponse.id,
+                        amount: refundAmount,
+                        status: refundResponse.status
+                    });
+
+                    // Send refund confirmation email
+                    await sendMail({
+                        to: customerEmail,
+                        subject: `Refund Processed for Order ${orderId}`,
+                        html: `
+                            <h2>Refund Confirmation</h2>
+                            <p>Your refund of ₹${refundAmount.toFixed(2)} has been processed successfully.</p>
+                            <p><strong>Reason:</strong> ${reason}</p>
+                            <p><strong>Refund ID:</strong> ${refundResponse.id}</p>
+                            <p><strong>Status:</strong> ${refundResponse.status}</p>
+                            <p>The amount will be credited to your account within 3-5 business days.</p>
+                        `
+                    });
+
+                    res.status(200).json({
+                        status: 200,
+                        message: 'Refund processed successfully',
+                        refundData: {
+                            refundId: refundResponse.id,
+                            amount: refundAmount,
+                            status: refundResponse.status,
+                            orderId: orderId
+                        }
+                    });
+
+                } catch (razorpayError: any) {
+                    console.error('Razorpay refund error:', {
+                        orderId,
+                        error: razorpayError?.message,
+                        code: razorpayError?.error?.code
+                    });
+
+                    // Handle specific Razorpay errors
+                    if (razorpayError?.error?.code === 'BAD_REQUEST_ERROR') {
+                        res.status(400).json({
+                            status: 400,
+                            error: {
+                                message: 'Refund cannot be processed. Transaction may have already been refunded or is not eligible for refund.',
+                                razorpayCode: razorpayError?.error?.code
+                            }
+                        });
+                    } else {
+                        res.status(500).json({
+                            status: 500,
+                            error: {
+                                message: 'Failed to process refund',
+                                details: razorpayError?.message
+                            }
+                        });
+                    }
+                }
+
+            } catch (error: Error | any) {
+                console.error('Refund processing error:', {
+                    error: error?.message,
+                    stack: error?.stack
+                });
+
+                res.status(500).json({
+                    status: 500,
+                    error: {
+                        message: 'Internal server error while processing refund',
+                        details: error?.message
+                    }
+                });
+            }
+        });
+
 
     app.listen(process.env.PORT ?? 5000, () =>
         console.log('listening on PORT:' + process.env.PORT),
