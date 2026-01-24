@@ -30,6 +30,19 @@ async function admin() {
         timeout: 60000,
       });
 
+    // customer-order-notification-topic
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "customer-order-notification-topic",
+            numPartitions: 6,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      });
     // user-create-topic
     await admin
       .createTopics({

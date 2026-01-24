@@ -29,7 +29,7 @@ async function createAdmin() {
     message,
   }: EachMessagePayload) {
     const user: AdminFieldsType = JSON.parse(message.value.toString());
-    console.log(user);
+    console.log("admin-data-received on consumer side: ", user);
     if (user)
       sanityClient
         ?.createIfNotExists({

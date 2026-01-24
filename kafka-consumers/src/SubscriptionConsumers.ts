@@ -21,15 +21,14 @@ const sanityConfig = {
 const sanityClient: SanityClient = createClient(sanityConfig);
 
 async function init() {
-    const consumers = [];
-    for (let i = 0; i < availableParallelism(); i++)
-        consumers.push(kafka.consumer({
-            groupId: 'seller-subscription-transaction',
-        }));
+    const consumer = kafka.consumer({
+        groupId: 'seller-subscription-transaction',
+    })
 
     async function handleMessage({ message }: EachMessagePayload) {
         try {
             const { _id, subscriptionPlan } = JSON.parse(message.value.toString())
+            console.log('admin id:', _id);
             console.log('Processing subscription plan:', subscriptionPlan)
 
             // First, fetch the current admin document to check existing subscription plans
@@ -63,7 +62,8 @@ async function init() {
                 // Find the latest expiry date from existing subscription plans
                 let latestExpiryDate: Date | null = null;
 
-                for (const plan of adminDoc.subscriptionPlan) {
+                if (adminDoc.subscriptionPlan.length > 0) {
+                    const plan = adminDoc.subscriptionPlan[adminDoc.subscriptionPlan.length - 1];
                     if (plan.planSchemaList?.expireDate) {
                         const expireDate = new Date(plan.planSchemaList.expireDate);
                         if (!latestExpiryDate || expireDate > latestExpiryDate) {
@@ -112,14 +112,14 @@ async function init() {
         }
     }
 
-    for (let consumer of consumers)
-        consumer.connect().then(() => {
-            consumer.subscribe({ topic: 'admin-update-topic' }).then(() => {
-                consumer.run({
-                    eachMessage: handleMessage
-                })
+
+    consumer.connect().then(() => {
+        consumer.subscribe({ topic: 'admin-update-topic' }).then(() => {
+            consumer.run({
+                eachMessage: handleMessage
             })
         })
+    })
 
 }
 

@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response } from "express";
 import dotenv from "dotenv";
+import cors from "cors";
 import { availableParallelism } from "node:os";
 import cluster from "cluster";
 import { spawn } from "node:child_process";
@@ -56,6 +57,7 @@ if (cluster.isPrimary) {
   redisC.set("id", JSON.stringify([4, 5]))
 
   const app: Express = express();
+  app.use(cors());
   app.get("/", (req: Request, res: Response) => {
     res.end(process.pid + " alive!");
   });

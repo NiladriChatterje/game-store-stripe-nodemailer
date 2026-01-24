@@ -209,11 +209,15 @@ if (cluster.isPrimary) {
         const result = await sanityClient?.fetch(
           `*[_type=='admin' && _id=='${req.params._id}'][0]`
         );
-        console.log(result)
+        console.log("<admin-record-fetched>: ", result)
 
         // Check subscription validity
         const isPlanActive = checkSubscriptionValidity(result);
 
+        if (!result) {
+          res.status(200).json(null);
+          return;
+        }
         const responseData = { ...result, isPlanActive };
         res.status(200).json(responseData);
 

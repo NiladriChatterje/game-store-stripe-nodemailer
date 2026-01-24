@@ -250,6 +250,39 @@ async function main() {
                         isPartial: isPartialFulfillment
                     });
 
+                    // ✅ SEND NOTIFICATION TO SELLER VIA KAFKA
+                    const kafkaProducer = kafka.producer();
+                    await kafkaProducer.connect();
+
+                    await kafkaProducer.send({
+                        topic: 'seller-order-notification-topic',
+                        messages: [{
+                            value: JSON.stringify({
+                                notificationId: uuid(),
+                                sellerOrderId: createdSellerOrder._id,
+                                orderId: createdOrder._id,
+                                sellerId: assignment.sellerId,
+                                customerId: productPayload.customer,
+                                productId: productPayload.product,
+                                quantity: assignment.quantity,
+                                totalAmount: assignment.amount,
+                                distance: assignment.distance?.toFixed(2),
+                                isPartialFulfillment: isPartialFulfillment,
+                                status: 'pending',
+                                timestamp: new Date().toISOString(),
+                                message: isPartialFulfillment
+                                    ? `New partial order: ${assignment.quantity} units (${assignment.distance?.toFixed(2)}km away)`
+                                    : `New order: ${assignment.quantity} units (${assignment.distance?.toFixed(2)}km away)`
+                            })
+                        }]
+                    });
+
+                    await kafkaProducer.disconnect();
+                    console.log('Seller notification sent to Kafka:', {
+                        sellerOrderId: createdSellerOrder._id,
+                        sellerId: assignment.sellerId
+                    });
+
                     // Update the seller's product quantity
                     // Get the original seller stock to calculate remaining
                     const sellerStockBefore = allSellersByDistance.find((s: any) => s._id === assignment.sellerProductDetailsId)?.quantity ?? 0;
@@ -301,8 +334,29 @@ async function main() {
                         }]
                     });
 
+                    // ✅ SEND CUSTOMER NOTIFICATION FOR PARTIAL FULFILLMENT
+                    await kafkaProducer.send({
+                        topic: 'customer-order-notification-topic',
+                        messages: [{
+                            value: JSON.stringify({
+                                notificationId: uuid(),
+                                orderId: createdOrder._id,
+                                customerId: productPayload.customer,
+                                customerEmail: productPayload.customerEmail,
+                                productId: productPayload.product,
+                                quantity: fulfilledQuantity,
+                                totalAmount: totalFulfilledAmount,
+                                isPartialFulfillment: true,
+                                refundAmount: refundAmount,
+                                status: 'processing',
+                                timestamp: new Date().toISOString(),
+                                message: `Your order is partially fulfilled. ${fulfilledQuantity}/${productPayload.quantity} items assigned. Refund of ₹${refundAmount?.toFixed(2)} will be processed.`
+                            })
+                        }]
+                    });
+
                     await kafkaProducer.disconnect();
-                    console.log('Refund event sent to Kafka:', { orderId: createdOrder._id, refundAmount });
+                    console.log('Refund event and customer notification sent to Kafka:', { orderId: createdOrder._id, refundAmount });
                 }
             } else {
                 // No sellers available within radius - full refund
@@ -339,8 +393,29 @@ async function main() {
                     }]
                 });
 
+                // ✅ SEND CUSTOMER NOTIFICATION FOR FULL REFUND
+                await kafkaProducer.send({
+                    topic: 'customer-order-notification-topic',
+                    messages: [{
+                        value: JSON.stringify({
+                            notificationId: uuid(),
+                            orderId: createdOrder._id,
+                            customerId: productPayload.customer,
+                            customerEmail: productPayload.customerEmail,
+                            productId: productPayload.product,
+                            quantity: 0,
+                            totalAmount: 0,
+                            isPartialFulfillment: false,
+                            refundAmount: productPayload.amount,
+                            status: 'rejected',
+                            timestamp: new Date().toISOString(),
+                            message: `Unfortunately, no sellers available for your order. Full refund of ₹${productPayload.amount?.toFixed(2)} will be processed.`
+                        })
+                    }]
+                });
+
                 await kafkaProducer.disconnect();
-                console.log('Full refund event sent to Kafka:', { orderId: createdOrder._id });
+                console.log('Full refund event and customer notification sent to Kafka:', { orderId: createdOrder._id });
             }
 
             consumer.commitOffsets([
