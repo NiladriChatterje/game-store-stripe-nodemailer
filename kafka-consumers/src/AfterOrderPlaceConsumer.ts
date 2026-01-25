@@ -49,73 +49,7 @@ async function main() {
                 message.value.toString()
             );
 
-            type QuantityObj = {
-                _id: string;
-                quantityObj?:
-                { quantity: number; _key: string; _type: string, pincode: string }
-            }
 
-            const getQtyOnPincode: QuantityObj = await sanityClient.fetch(`*[_type == 'product'
-                            && _id match '${productPayload.product}'][0]{
-                            _id,
-                            "quantityObj": quantity[pincode match "${productPayload.pincode}"][0] 
-                          }`);
-
-            if (getQtyOnPincode._id.length > 0) {
-                //if record was found update the particular document in the array with extra quantity
-                const result = await sanityClient
-                    .patch(productPayload.product)
-                    .insert('replace',
-                        `quantity[pincode=="${productPayload.pincode}"]`, [{
-                            pincode: productPayload.pincode,
-                            quantity: productPayload.quantity - getQtyOnPincode?.quantityObj.quantity,
-                            _key: uuid()
-                        }]
-                    )
-                    .commit();
-
-                console.log(`result after updating quantity of a pincode:`, result);
-
-                //update the product to redis
-                redisClient.hset("products:details", productPayload.product, JSON.stringify({
-                    ...productPayload,
-                    quantity: productPayload.quantity + (getQtyOnPincode?.quantityObj?.quantity ?? 0)
-                }))
-            }
-
-            const seller_quantity = await sanityClient.fetch(`*[_type=='seller_product_details' 
-                    && product_id match "${productPayload.product}"
-                    && quantity >= ${productPayload.quantity}
-                    ][0]{
-                    ...,
-                     "distance": geo::distance(geoPoint, geo::latLng(${productPayload.geoPoint.lat},
-                      ${productPayload.geoPoint.lng}))
-                    } | order(distance asc)[0]`);
-
-
-            const result = await sanityClient
-                .patch(productPayload.product)
-                .insert('replace',
-                    `quantity[pincode=="${productPayload.pincode}"]`, [{
-                        pincode: productPayload.pincode,
-                        quantity: Math.max(getQtyOnPincode?.quantityObj.quantity - productPayload.quantity, 0),
-                        _key: uuid()
-                    }]
-                )
-                .commit();
-
-            await sanityClient.createOrReplace({
-                _id: seller_quantity._id,
-                _type: 'seller_product_details',
-                seller_id: seller_quantity?.seller,
-                product_id: productPayload.product,
-                pincode: productPayload.pincode,
-                quantity: (seller_quantity?.quantity ?? 0) - productPayload.quantity,
-                geoPoint: {
-                    lat: productPayload?.geoPoint.lat,
-                    lng: productPayload?.geoPoint.lng
-                }
-            })
 
             // ✅ Create Order Document in Sanity
             const orderDocument = {
@@ -220,6 +154,46 @@ async function main() {
             // Step 4: Check if partial fulfillment is happening
             const isPartialFulfillment = fulfilledQuantity > 0 && fulfilledQuantity < productPayload.quantity;
             const refundAmount = (productPayload.quantity - fulfilledQuantity) * unitPrice;
+
+            // ✅ Update Main Product Stock (Central Inventory) based on Fulfilled Quantity
+            if (fulfilledQuantity > 0) {
+                const pincodeStr = String(productPayload.pincode).trim();
+                console.log(`[StockUpdate] Attempting to update stock for Product: ${productPayload.product}, Pincode: ${pincodeStr}, Fulfilled: ${fulfilledQuantity}`);
+
+                // Fetch the specific quantity object's _key and current value
+                // We specifically select the item that matches the pincode
+                const currentProductState = await sanityClient.fetch(`*[_type == 'product' && _id == "${productPayload.product}"][0]{
+                    "quantityItem": quantity[pincode == "${pincodeStr}"][0] {
+                        _key,
+                        quantity,
+                        _type
+                    }
+                 }`);
+
+                console.log(`[StockUpdate] Fetch Result:`, JSON.stringify(currentProductState));
+
+                if (currentProductState?.quantityItem?._key) {
+                    const { _key, quantity: currentStock } = currentProductState.quantityItem;
+                    const newStock = Math.max(0, (currentStock || 0) - fulfilledQuantity);
+
+                    console.log(`[StockUpdate] Current Stock: ${currentStock}, New Stock: ${newStock}, Key: ${_key}`);
+
+                    // Robust Update: Replace the item in the array using its _key
+                    const result = await sanityClient
+                        .patch(productPayload.product)
+                        .insert('replace', `quantity[_key=="${_key}"]`, [{
+                            _key: _key,
+                            _type: 'pair',
+                            pincode: pincodeStr,
+                            quantity: newStock
+                        }])
+                        .commit({ autoGenerateArrayKeys: true });
+
+                    console.log(`[StockUpdate] Commit Result:`, JSON.stringify(result));
+                } else {
+                    console.warn(`[StockUpdate] ERROR: Could not find quantity record for pincode "${pincodeStr}". Verify if product ${productPayload.product} has this pincode initialized.`);
+                }
+            }
 
             // Step 5: Create OrderAcceptedBySeller documents for each assigned seller
             if (assignedSellers.length > 0) {

@@ -59,7 +59,7 @@ if (cluster.isPrimary) {
 
   const kafka = new Kafka({
     clientId: 'xv-store',
-    brokers: ['localhost:9095', 'localhost:9096', 'localhost:9097']
+    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
   });
 
 
@@ -202,7 +202,7 @@ if (cluster.isPrimary) {
       try {
         // Query orders from Sanity where customer references the user and status is dispatched, shipping, or shipped
         const deliveryOrders = await sanityClient.fetch(`
-          *[_type=="order" && customer._ref == $userId && status in ["dispatched", "shipping", "shipped"]] {
+          *[_type=="order" && customer._ref == $userId && status in ["orderPlaced", "dispatched", "shipping", "shipped"]] {
             _id,
             customer->{
               _id,
