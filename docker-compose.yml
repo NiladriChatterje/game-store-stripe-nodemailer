@@ -198,3 +198,65 @@ services:
       - kafka2
       - kafka3
       - redis_storage
+
+  mysql1:
+    image: mysql:9.6.0
+    container_name: mysql1
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql1_data:/var/lib/mysql_1
+
+  mysql2:
+    image: mysql:9.6.0
+    container_name: mysql2
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql2_data:/var/lib/mysql_2
+
+  mysql3:
+    image: mysql:9.6.0
+    container_name: mysql3
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql3_data:/var/lib/mysql_3
+
+  mysql4:
+    image: mysql:9.6.0
+    container_name: mysql4
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3309:3306"
+    volumes:
+      - mysql4_data:/var/lib/mysql_4
+
+  mysql5:
+    image: mysql:9.6.0
+    container_name: mysql5
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3310:3306"
+    volumes:
+      - mysql5_data:/var/lib/mysql_5
+
+volumes:
+  mysql1_data:
+  mysql2_data:
+  mysql3_data:
+  mysql4_data:
+  mysql5_data:
