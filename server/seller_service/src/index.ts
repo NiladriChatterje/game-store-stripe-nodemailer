@@ -13,6 +13,7 @@ import { createTransport } from "nodemailer";
 import { ClerkClient, verifyToken } from "@clerk/backend";
 import { spawn } from 'node:child_process'
 import { JwtPayload } from "@clerk/types";
+import mysql from 'mysql2/promise';
 
 
 dotenv.config();
@@ -206,10 +207,56 @@ if (cluster.isPrimary) {
             return;
           }
         }
-        const result = await sanityClient?.fetch(
-          `*[_type=='admin' && _id=='${req.params._id}'][0]`
-        );
-        console.log("<admin-record-fetched>: ", result)
+        // MySQL Replacement
+        const connection = await mysql.createConnection({
+          host: 'global_sql_data',
+          port: 3311,
+          user: 'root',
+          database: 'game_store'
+        });
+
+        const [rows] = await connection.execute('SELECT * FROM sellers WHERE id = ?', [req.params._id]);
+
+        let result: any = null;
+        if (Array.isArray(rows) && rows.length > 0) {
+          const row = rows[0] as any;
+          result = {
+            _id: row.id,
+            _type: 'admin',
+            username: row.username,
+            email: row.email,
+            phone: row.phone,
+            geoPoint: {
+              lat: row.geo_lat,
+              lng: row.geo_lng
+            },
+            address: {
+              pincode: row.address_pincode,
+              county: row.address_county,
+              state: row.address_state,
+              country: row.address_country
+            },
+            subscriptionPlan: []
+          };
+
+          // Fetch subscriptions
+          const [subRows] = await connection.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
+
+          if (Array.isArray(subRows) && subRows.length > 0) {
+            result.subscriptionPlan = subRows.map((sub: any) => ({
+              _key: sub.id,
+              transactionId: sub.transaction_id,
+              amount: sub.amount,
+              planSchemaList: {
+                activeDate: sub.plan_active_date,
+                expireDate: sub.plan_expire_date
+              }
+            }));
+          }
+        }
+        await connection.end();
+
+        console.log("<admin-record-fetched from MySQL>: ", result)
 
         // Check subscription validity
         const isPlanActive = checkSubscriptionValidity(result);

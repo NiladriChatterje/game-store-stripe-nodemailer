@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) NOT NULL,
     geo_lat DOUBLE,
     geo_lng DOUBLE,
-    address_pincode VARCHAR(20),
+    address_pincode CHAR(6),
     address_county VARCHAR(255),
     address_country VARCHAR(255),
     address_state VARCHAR(255),
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS sellers (
     email VARCHAR(255) NOT NULL,
     geo_lat DOUBLE,
     geo_lng DOUBLE,
-    address_pincode VARCHAR(20),
+    address_pincode CHAR(6),
     address_county VARCHAR(255),
     address_country VARCHAR(255),
     address_state VARCHAR(255),
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS seller_subscriptions (
     plan_active_date DATETIME NOT NULL,
     plan_expire_date DATETIME NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
+    FOREIGN KEY (seller_id) REFERENCES admins(id) ON DELETE CASCADE
 );
 
 -- Shippers Table (from documents/ShipperType.ts)
@@ -108,10 +108,10 @@ CREATE TABLE IF NOT EXISTS product_quantities (
 -- Product Sellers (Many-to-Many products <-> admins) (from documents/ProductType.ts)
 CREATE TABLE IF NOT EXISTS product_sellers (
     product_id VARCHAR(255) NOT NULL,
-    admin_id VARCHAR(255) NOT NULL,
-    PRIMARY KEY (product_id, admin_id),
+    seller_id VARCHAR(255) NOT NULL,
+    PRIMARY KEY (product_id, seller_id),
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-    FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
+    FOREIGN KEY (seller_id) REFERENCES admins(id) ON DELETE CASCADE
 );
 
 -- Product Embeddings (from documents/ProductEmbeddingsType.ts)

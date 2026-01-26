@@ -208,7 +208,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql1_data:/var/lib/mysql_1
+      - mysql1_data:/var/lib/mysql
 
   mysql2:
     image: mysql:9.6.0
@@ -219,7 +219,7 @@ services:
     ports:
       - "3307:3306"
     volumes:
-      - mysql2_data:/var/lib/mysql_2
+      - mysql2_data:/var/lib/mysql
 
   mysql3:
     image: mysql:9.6.0
@@ -230,7 +230,7 @@ services:
     ports:
       - "3308:3306"
     volumes:
-      - mysql3_data:/var/lib/mysql_3
+      - mysql3_data:/var/lib/mysql
 
   mysql4:
     image: mysql:9.6.0
@@ -241,7 +241,7 @@ services:
     ports:
       - "3309:3306"
     volumes:
-      - mysql4_data:/var/lib/mysql_4
+      - mysql4_data:/var/lib/mysql
 
   mysql5:
     image: mysql:9.6.0
@@ -252,7 +252,18 @@ services:
     ports:
       - "3310:3306"
     volumes:
-      - mysql5_data:/var/lib/mysql_5
+      - mysql5_data:/var/lib/mysql
+
+  global_sql_data:
+    image: mysql:9.6.0
+    container_name: global_sql_data
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3311:3306"
+    volumes:
+      - global_sql_data:/var/lib/mysql
 
 volumes:
   mysql1_data:
@@ -260,3 +271,4 @@ volumes:
   mysql3_data:
   mysql4_data:
   mysql5_data:
+  global_sql_data:
