@@ -135,7 +135,6 @@ services:
     restart: always
     volumes:
       - ./server/payment_service:/app
-      - /app/dist
       # - ./server/payment_service/node_modules:/app/node_modules
     ports:
       - "5000:5000"

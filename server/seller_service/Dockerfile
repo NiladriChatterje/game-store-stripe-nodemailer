@@ -10,15 +10,15 @@ COPY . .
 # -G sudo: Add to the sudo group
 # -H: Do not create home directory (if you don't want it)
 RUN addgroup -S sudo && \
- adduser -S production -G sudo
+    adduser -S production -G sudo
 
- RUN apk update \
-     && apk upgrade --no-cache 
+RUN apk update \
+    && apk upgrade --no-cache 
 
 RUN npm install
 # change User to production
 USER production
 
-    
+
 EXPOSE 5003
 CMD [ "npm","run","start" ]

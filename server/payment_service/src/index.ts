@@ -6,7 +6,7 @@ import { availableParallelism } from 'os'
 import { Kafka, Producer } from 'kafkajs'
 import { spawn } from 'child_process'
 import { type Subscription } from '@declaration/index'
-import { ClerkClient, verifyToken } from '@clerk/backend'
+import { verifyToken } from '@clerk/backend'
 import nodemailer from 'nodemailer';
 import Razorpay from 'razorpay'
 import shortid from 'shortid'

@@ -1,19 +1,27 @@
 FROM node:jod-alpine3.21
 
+# Update Alpine packages to reduce vulnerabilities
+
 WORKDIR /app
+COPY . .
+# Create a new non-root user and add them to the sudo group
+# -m: Create home directory
+# -s /bin/bash: Set default shell
+# -G sudo: Add to the sudo group
+# -H: Do not create home directory (if you don't want it)
+RUN addgroup -S sudo && \
+    adduser -S payment -G sudo
 
-COPY ./ ./
+RUN adduser payment wheel
 
-RUN apk update && \
-    apk upgrade --no-cache
+RUN apk update \
+    && apk upgrade --no-cache 
 
-RUN npm install
-#Creating a non-root user
-RUN addgroup -S paymentGroup && adduser -S payment -G paymentGroup
-
+RUN npm ci --force
 # change User to payment
+EXPOSE 5000
+RUN npm run build
+
 USER payment
 
-EXPOSE 5000
-
-CMD ["npm","run","start"]
+CMD [ "npm","run","start" ]
