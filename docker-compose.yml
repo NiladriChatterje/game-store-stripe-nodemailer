@@ -63,7 +63,7 @@ services:
       - "9097:9097"
       - "29094:29094"
     environment:
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:19094,EXTERNAL://kafka3:9094,LOCALHOST://localhost:9097,DOCKER://host.docker.internal:29094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:19094,LOCALHOST://localhost:9097,EXTERNAL://kafka3:9094,DOCKER://host.docker.internal:29094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
@@ -201,6 +201,7 @@ services:
   mysql1:
     image: mysql:9.6.0
     container_name: mysql1
+    hostname: mysql1
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
@@ -212,6 +213,7 @@ services:
   mysql2:
     image: mysql:9.6.0
     container_name: mysql2
+    hostname: mysql2
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
@@ -223,6 +225,7 @@ services:
   mysql3:
     image: mysql:9.6.0
     container_name: mysql3
+    hostname: mysql3
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
@@ -234,6 +237,7 @@ services:
   mysql4:
     image: mysql:9.6.0
     container_name: mysql4
+    hostname: mysql4
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
@@ -245,6 +249,7 @@ services:
   mysql5:
     image: mysql:9.6.0
     container_name: mysql5
+    hostname: mysql5
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
@@ -256,6 +261,7 @@ services:
   global_sql_data:
     image: mysql:9.6.0
     container_name: global_sql_data
+    hostname: global_sql_data
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"

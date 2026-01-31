@@ -3,21 +3,26 @@ import { createClient as RedisClient } from 'redis'
 import type { ProductType } from "../declaration/productType.d.ts";
 import { uuidv4 } from "uuidv7";
 import mysql from 'mysql2/promise';
+import { ShardRouter, PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter';
 
 const kafka: Kafka = new Kafka({
   clientId: "xvstore",
   brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
 });
 
-// MySQL Connection Pool
-const mysqlPool = mysql.createPool({
-  host: 'localhost',
-  port: 3311,
-  user: 'root',
-  password: '',
-  database: 'game_store',
+// MySQL Connection Pools for Shards
+const shardPools = PRODUCT_SHARDS_CONFIG.map(config => mysql.createPool({
+  ...config,
   waitForConnections: true,
   connectionLimit: 10,
+  queueLimit: 0
+}));
+
+// Global DB Pool (though not heavily used in this consumer yet)
+const globalPool = mysql.createPool({
+  ...GLOBAL_DB_CONFIG,
+  waitForConnections: true,
+  connectionLimit: 5,
   queueLimit: 0
 });
 
@@ -45,7 +50,15 @@ async function main() {
         message.value.toString()
       );
 
-      // Check if product exists in MySQL (duplicates check)
+      const productId = productPayload._id || uuidv4();
+
+      // DETERMINE SHARD
+      const shardIndex = ShardRouter.getShardIndex(productId);
+      const mysqlPool = shardPools[shardIndex];
+
+      console.log(`Routing product ${productId} to shard ${shardIndex}`);
+
+      // Check if product exists in this shard
       const [existingProducts] = await mysqlPool.execute(
         'SELECT id FROM products WHERE ean_number = ? LIMIT 1',
         [productPayload.eanUpcNumber]
@@ -53,13 +66,7 @@ async function main() {
 
       const checkIfUPCExist = (existingProducts as any[])[0]?.id;
 
-      // Insert or Update Product in MySQL
-      const productId = productPayload._id || uuidv4();
-
-      // We check if we need to insert the product
-      // If it's a new product ID, we try to insert. 
-      // Note: Sanity's createIfNotExists works on _id.
-
+      // Check if we need to insert the product
       const [productCheck] = await mysqlPool.execute(
         'SELECT id FROM products WHERE id = ?',
         [productId]
@@ -67,75 +74,51 @@ async function main() {
 
       let isNewProduct = false;
       if ((productCheck as any[]).length === 0) {
-        // Insert new product
+        // Insert new product into selected shard
         await mysqlPool.execute(`
           INSERT INTO products (
-            id, product_name, category, ean_type, ean_number, model_number, 
-            description, price, currency, discount, keywords, images, seller_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            id, product_name, category, ean_number, price_amount
+          ) VALUES (?, ?, ?, ?, ?)
         `, [
           productId,
           productPayload.productName,
           productPayload.category,
-          productPayload.eanUpcIsbnGtinAsinType,
           productPayload.eanUpcNumber,
-          productPayload.modelNumber,
-          productPayload.productDescription,
-          productPayload.price.pdtPrice,
-          productPayload.price.currency,
-          productPayload.price.discountPercentage,
-          JSON.stringify(productPayload.keywords),
-          JSON.stringify(productPayload.imagesBase64 || []),
-          productPayload.seller
+          productPayload.price.pdtPrice
         ]);
         isNewProduct = true;
       }
 
       heartbeat();
 
-      // Handle Seller Inventory (Quantity)
-      // Check if inventory record exists
+      // Handle Seller Product Details (Sharded alongside product)
       const [inventoryCheck] = await mysqlPool.execute(
-        'SELECT id, quantity FROM seller_inventory WHERE product_id = ? AND seller_id = ? AND pincode = ?',
+        'SELECT id, quantity FROM seller_product_details WHERE product_id = ? AND seller_id = ? AND pincode = ?',
         [productId, productPayload.seller, productPayload.pincode]
       );
 
-      let sellerInventoryId;
       let newQuantity = productPayload.quantity;
 
       if ((inventoryCheck as any[]).length === 0) {
-        // Create new inventory record
-        sellerInventoryId = uuidv4();
+        // Create new record in shard
+        const detailId = uuidv4();
         await mysqlPool.execute(`
-            INSERT INTO seller_inventory (id, seller_id, product_id, pincode, quantity)
+            INSERT INTO seller_product_details (id, seller_id, product_id, pincode, quantity)
             VALUES (?, ?, ?, ?, ?)
-         `, [sellerInventoryId, productPayload.seller, productId, productPayload.pincode, productPayload.quantity]);
+         `, [detailId, productPayload.seller, productId, productPayload.pincode, productPayload.quantity]);
       } else {
-        // Update existing inventory
+        // Update existing record in shard
         const currentInventory = (inventoryCheck as any[])[0];
-        sellerInventoryId = currentInventory.id;
+        const detailId = currentInventory.id;
         newQuantity = currentInventory.quantity + productPayload.quantity;
 
         await mysqlPool.execute(`
-            UPDATE seller_inventory SET quantity = ? WHERE id = ?
-         `, [newQuantity, sellerInventoryId]);
+            UPDATE seller_product_details SET quantity = ? WHERE id = ?
+         `, [newQuantity, detailId]);
       }
 
-      // Redis Updates
+      // Redis Updates (Cache remains centralized or based on your cluster config)
       if (redisClient.isOpen) {
-        // We construct a result object similar to what might be expected by the UI/other services
-        // conforming to ProductType somewhat, or the stored schema
-        const productData = {
-          _id: productId,
-          productName: productPayload.productName,
-          category: productPayload.category,
-          // ... add other fields if needed for redis cache
-          quantity: newQuantity,
-          pincode: productPayload.pincode
-        };
-
-        // Note: The original code cached the 'result' from Sanity which contained the full product object.
-        // We should likely cache the full payload logic + updated quantity.
         const fullResult = {
           ...productPayload,
           _id: productId,
@@ -149,12 +132,20 @@ async function main() {
         console.log("Redis updated")
       }
 
-      // Map potential duplicates
+      // Map potential duplicates within the same shard (or globally - this is tricky with sharding)
+      // For now, we handle it within the shard.
       if (checkIfUPCExist && checkIfUPCExist !== productId) {
-        await mysqlPool.execute(`
-           INSERT INTO potential_duplicates (existing_product_id, potential_duplicate_id)
-           VALUES (?, ?)
-        `, [checkIfUPCExist, productId]);
+        // potential_duplicates table should also exist on shards if we check per-shard
+        // but if we want global duplicate check, it should be in global_sql_data.
+        // Let's stick to shard-local for now or move to global later.
+        try {
+          await mysqlPool.execute(`
+                INSERT INTO potential_duplicates (id, existing_product_id, potential_duplicate_id)
+                VALUES (?, ?, ?)
+            `, [uuidv4(), checkIfUPCExist, productId]);
+        } catch (e) {
+          console.log("Duplicate mapping failed (maybe already exists)");
+        }
       }
 
       consumer.commitOffsets([
@@ -173,4 +164,5 @@ async function main() {
 }
 
 main();
+
 

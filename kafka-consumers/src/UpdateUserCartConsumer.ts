@@ -8,7 +8,7 @@ import { uuidv4 } from 'uuidv7';
 
 const kafka = new Kafka({
     clientId: 'xv-store',
-    brokers: ['localhost:9095', 'localhost:9096', 'localhost:9097']
+    brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
 });
 
 const sanityClient = SanityClient(sanityConfig);

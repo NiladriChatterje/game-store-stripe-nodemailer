@@ -12,7 +12,26 @@ import { spawn } from "child_process";
 import { Kafka, RecordMetadata } from "kafkajs";
 import { JwtPayload } from "@clerk/types";
 import { verifyToken } from "@clerk/backend";
+import mysql from 'mysql2/promise';
+import { ShardRouter, PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter.ts';
+
 dotenv.config();
+
+// MySQL Connection Pools for Shards
+const shardPools = PRODUCT_SHARDS_CONFIG.map((config: any) => mysql.createPool({
+  ...config,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+}));
+
+// Global DB Pool
+const globalPool = mysql.createPool({
+  ...GLOBAL_DB_CONFIG,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
 
 declare global {
   namespace Express {
@@ -108,7 +127,7 @@ if (cluster.isPrimary) {
     const app: Express = express();
     const kafka: Kafka = new Kafka({
       clientId: 'xv-store',
-      brokers: ['localhost:9095', 'localhost:9096', 'localhost:9097']
+      brokers: ['kafka1:9092', 'kafka2:9093', 'kafka3:9094']
     });
     await redisClient.connect();
     app.use(cors());
@@ -215,6 +234,46 @@ if (cluster.isPrimary) {
                 return;
               }
             }
+
+            // MySQL Shard Fetch
+            const shardIndex = ShardRouter.getShardIndex(productId);
+            const mysqlPool = shardPools[shardIndex];
+
+            const [productRows] = await mysqlPool.execute(
+              'SELECT * FROM products WHERE id = ?',
+              [productId]
+            );
+
+            if (Array.isArray(productRows) && productRows.length > 0) {
+              const product = productRows[0] as any;
+
+              // Fetch regional quantity from the same shard
+              const [quantityRows] = await mysqlPool.execute(
+                'SELECT quantity FROM seller_product_details WHERE product_id = ? AND pincode = ?',
+                [productId, pincode]
+              );
+
+              const quantity = (quantityRows as any[])[0]?.quantity || 0;
+
+              const result = {
+                _id: product.id,
+                productName: product.product_name,
+                category: product.category,
+                eanUpcNumber: product.ean_number,
+                price: product.price_amount,
+                quantity: quantity
+              };
+
+              res.status(200).json(result);
+
+              // Cache to Redis
+              if (redisClient.isOpen) {
+                await redisClient.hSet('products:details', productId, JSON.stringify(result));
+              }
+              return;
+            }
+
+            // Fallback to Sanity if not in MySQL yet
             const result: ProductType = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]{
               _id,
               _rev,

@@ -37,7 +37,7 @@ async function createAdmin() {
       host: 'localhost',
       port: 3311,
       user: 'root',
-      database: 'game_store'
+      database: 'xvstore'
     });
 
     if (user) {

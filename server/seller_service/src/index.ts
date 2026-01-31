@@ -210,13 +210,13 @@ if (cluster.isPrimary) {
         // MySQL Replacement
         const connection = await mysql.createConnection({
           host: 'global_sql_data',
-          port: 3311,
+          port: 3306,
           user: 'root',
-          database: 'game_store'
+          database: 'xvstore'
         });
-
+        console.log("<<Connection successfull>>");
         const [rows] = await connection.execute('SELECT * FROM sellers WHERE id = ?', [req.params._id]);
-
+        console.log("<MySQL admin data from sql> : ", rows);
         let result: any = null;
         if (Array.isArray(rows) && rows.length > 0) {
           const row = rows[0] as any;
@@ -262,7 +262,7 @@ if (cluster.isPrimary) {
         const isPlanActive = checkSubscriptionValidity(result);
 
         if (!result) {
-          res.status(200).json(null);
+          res.status(404).json({ error: "Admin not found" });
           return;
         }
         const responseData = { ...result, isPlanActive };
