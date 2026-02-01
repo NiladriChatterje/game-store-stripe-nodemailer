@@ -19,7 +19,7 @@ async function admin() {
     console.log(await admin.listTopics());
 
 
-    // admin-create-topic
+    //admin-create-topic
     await admin
       .createTopics({
         topics: [
@@ -74,6 +74,19 @@ async function admin() {
         timeout: 60000,
       })
 
+    // 'subscription-notifications'
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "subscription-notifications",
+            numPartitions: 6,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      })
 
     //admin-update-topic
     await admin

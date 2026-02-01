@@ -21,7 +21,7 @@ async function produce() {
   await producer.connect();
   await producer
     .send({
-      topic: "admin-subscription-transaction",
+      topic: "seller-subscription-transaction",
       messages: [{ value: JSON.stringify(workerData) }],
     })
 

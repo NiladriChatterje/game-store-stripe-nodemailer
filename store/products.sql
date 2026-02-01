@@ -1,3 +1,4 @@
+USE xvstore;
 CREATE TABLE IF NOT EXISTS products (
     id VARCHAR(255) PRIMARY KEY,
     product_name VARCHAR(255),

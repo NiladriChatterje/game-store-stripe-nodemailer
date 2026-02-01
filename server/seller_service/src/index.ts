@@ -14,6 +14,9 @@ import { ClerkClient, verifyToken } from "@clerk/backend";
 import { spawn } from 'node:child_process'
 import { JwtPayload } from "@clerk/types";
 import mysql from 'mysql2/promise';
+import { EventEmitter } from 'events';
+
+const subscriptionEvents = new EventEmitter();
 
 
 dotenv.config();
@@ -97,6 +100,20 @@ if (cluster.isPrimary) {
     next();
   });
 
+  // Initialize Kafka consumer for subscription notifications
+  const notificationConsumer = kafka.consumer({ groupId: 'seller-service-notifications-' + Math.random().toString(36).substring(7) });
+  await notificationConsumer.connect();
+  await notificationConsumer.subscribe({ topic: 'subscription-notifications', fromBeginning: false });
+  await notificationConsumer.run({
+    eachMessage: async ({ message }) => {
+      if (message.value) {
+        const payload = JSON.parse(message.value.toString());
+        console.log("<Subscription notification received>:", payload);
+        subscriptionEvents.emit('status-update', payload);
+      }
+    }
+  });
+
   //#region clerk_middleware
   const verifyClerkToken = async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
     try {
@@ -163,29 +180,29 @@ if (cluster.isPrimary) {
       let producer: Producer;
       try {
         producer = kafka.producer({
-          allowAutoTopicCreation: false,
+          allowAutoTopicCreation: true,
           transactionTimeout: 60000,
         });
 
+        console.log("Connecting Kafka producer...");
         await producer.connect();
+        console.log("Kafka producer connected.");
 
+        console.log(`Sending message to topic: admin-create-topic`);
         const recordMetaData: RecordMetadata[] = await producer.send({
           topic: "admin-create-topic",
           messages: [{ value: JSON.stringify(value) }],
         });
-
-        producer.on("producer.network.request_timeout", (ev) => {
-          res.status(503).
-            json("session timeout! Couldn't create profile.")
-        });
+        console.log("Message sent successfully. Metadata:", recordMetaData);
 
         res.status(201).send('Account will be created soon!')
         await producer.disconnect();
+        console.log("Kafka producer disconnected.");
       }
-      catch (err) {
-        console.log("Error in admin creation endpoint: ", err);
-        res.status(500).json("Internal server error! Please try again later.");
-      };
+      catch (err: any) {
+        console.error("Error in admin creation endpoint: ", err);
+        res.status(500).json({ error: "Internal server error!", details: err.message });
+      }
     }
   );
 
@@ -262,11 +279,11 @@ if (cluster.isPrimary) {
         const isPlanActive = checkSubscriptionValidity(result);
 
         if (!result) {
-          res.status(404).json({ error: "Admin not found" });
+          res.status(200).json({ error: "Admin not found" });
           return;
         }
         const responseData = { ...result, isPlanActive };
-        res.status(200).json(responseData);
+        res.status(299).json(responseData);
 
         if (req.params._id.length > 0) {
           await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(responseData));
@@ -590,6 +607,26 @@ if (cluster.isPrimary) {
     });
 
     res.send("SMS sent");
+  });
+
+  app.get("/subscription-status/:sellerId", (req: Request<{ sellerId: string }>, res: Response) => {
+    const { sellerId } = req.params;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const onStatusUpdate = (payload: any) => {
+      if (payload.sellerId === sellerId) {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+    };
+
+    subscriptionEvents.on('status-update', onStatusUpdate);
+
+    req.on('close', () => {
+      subscriptionEvents.off('status-update', onStatusUpdate);
+    });
   });
   //#endregion 
 

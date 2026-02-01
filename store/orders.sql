@@ -1,3 +1,4 @@
+USE xvstore;
 CREATE TABLE IF NOT EXISTS orders (
     id VARCHAR(255) PRIMARY KEY, -- Sanity Document ID
     order_id_display VARCHAR(255) NOT NULL, -- "orderId" field

@@ -1,8 +1,9 @@
 import { EachMessagePayload, Kafka } from 'kafkajs';
-import { availableParallelism } from 'node:os';
-import { createClient, SanityClient } from '@sanity/client';
+import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import shortid from 'shortid';
+import { GLOBAL_DB_CONFIG } from './utils/ShardRouter';
+
 dotenv.config();
 
 const kafka = new Kafka({
@@ -10,117 +11,86 @@ const kafka = new Kafka({
     brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
 });
 
-const sanityConfig = {
-    projectId: process.env.SANITY_PROJECT_ID,
-    dataset: 'production',
-    apiVersion: '2024-12-21',
-    useCdn: true,
-    token: process.env.SANITY_TOKEN
-}
-
-const sanityClient: SanityClient = createClient(sanityConfig);
-
 async function init() {
     const consumer = kafka.consumer({
         groupId: 'seller-subscription-transaction',
-    })
+    });
+
+    const pool = mysql.createPool(GLOBAL_DB_CONFIG);
+
+    const producer = kafka.producer();
+    await producer.connect();
 
     async function handleMessage({ message }: EachMessagePayload) {
         try {
-            const { _id, subscriptionPlan } = JSON.parse(message.value.toString())
-            console.log('admin id:', _id);
-            console.log('Processing subscription plan:', subscriptionPlan)
+            const payload = JSON.parse(message.value.toString());
+            const { _id, subscriptionPlan } = payload;
 
-            // First, fetch the current admin document to check existing subscription plans
-            const adminDoc = await sanityClient.fetch(
-                `*[_type=="admin" && _id==$adminId][0]{
-                    _id,
-                    subscriptionPlan[]{
-                        _key,
-                        transactionId,
-                        orderId,
-                        paymentSignature,
-                        amount,
-                        planSchemaList{
-                            activeDate,
-                            expireDate
-                        }
-                    }
-                }`,
-                { adminId: _id }
-            );
-
-            if (!adminDoc) {
-                console.error(`Admin document not found for ID: ${_id}`);
+            if (!_id || !subscriptionPlan) {
+                console.log('Skipping message: missing _id or subscriptionPlan');
                 return;
             }
 
-            // Calculate the start date for the new subscription plan
-            let newPlanStartDate = new Date(); // Default to current date
+            console.log('Processing subscription for seller:', _id);
 
-            if (adminDoc.subscriptionPlan && adminDoc.subscriptionPlan.length > 0) {
-                // Find the latest expiry date from existing subscription plans
-                let latestExpiryDate: Date | null = null;
+            // 1. Get the latest expiry date for this seller
+            const [rows]: any = await pool.execute(
+                'SELECT MAX(plan_expire_date) as latestExpire FROM seller_subscriptions WHERE seller_id = ?',
+                [_id]
+            );
 
-                if (adminDoc.subscriptionPlan.length > 0) {
-                    const plan = adminDoc.subscriptionPlan[adminDoc.subscriptionPlan.length - 1];
-                    if (plan.planSchemaList?.expireDate) {
-                        const expireDate = new Date(plan.planSchemaList.expireDate);
-                        if (!latestExpiryDate || expireDate > latestExpiryDate) {
-                            latestExpiryDate = expireDate;
-                        }
-                    }
+            let newPlanStartDate = new Date();
+            const latestExpire = rows[0]?.latestExpire;
+
+            if (latestExpire) {
+                const expireDate = new Date(latestExpire);
+                if (expireDate > newPlanStartDate) {
+                    newPlanStartDate = expireDate;
                 }
-
-                // If there's a valid expiry date in the future, start the new plan after it
-                if (latestExpiryDate && latestExpiryDate > new Date()) {
-                    newPlanStartDate = new Date(latestExpiryDate);
-                    console.log(`New subscription plan will start after existing plan expires: ${newPlanStartDate.toISOString()}`);
-                } else {
-                    console.log('No active subscription plans found, starting new plan immediately');
-                }
-            } else {
-                console.log('No existing subscription plans, starting new plan immediately');
             }
 
-            // Calculate the new plan's expiry date (assuming 30 days duration)
+            // 2. Calculate new expiry date (30 days from start)
             const newPlanExpiryDate = new Date(newPlanStartDate);
             newPlanExpiryDate.setDate(newPlanExpiryDate.getDate() + 30);
 
-            // Create the new subscription plan with calculated dates
-            const newSubscriptionPlan = {
-                _key: shortid(),
-                ...subscriptionPlan,
-                planSchemaList: {
-                    activeDate: newPlanStartDate.toISOString(),
-                    expireDate: newPlanExpiryDate.toISOString()
-                }
-            };
+            // 3. Insert into MySQL
+            await pool.execute(
+                `INSERT INTO seller_subscriptions 
+                (id, seller_id, transaction_id, order_id, payment_signature, amount, plan_active_date, plan_expire_date) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    shortid(),
+                    _id,
+                    subscriptionPlan.transactionId,
+                    subscriptionPlan.orderId,
+                    subscriptionPlan.paymentSignature,
+                    subscriptionPlan.amount || 0,
+                    newPlanStartDate,
+                    newPlanExpiryDate
+                ]
+            );
 
-            console.log('Appending new subscription plan:', newSubscriptionPlan);
+            console.log(`Successfully added subscription to MySQL for seller: ${_id}`);
 
-            // Append the new subscription plan
-            await sanityClient
-                .patch(_id)
-                .append('subscriptionPlan', [newSubscriptionPlan])
-                .commit();
-
-            console.log(`Successfully added subscription plan for admin: ${_id}`);
+            // 4. Notify via Kafka for SSE
+            await producer.send({
+                topic: 'subscription-notifications',
+                messages: [{ value: JSON.stringify({ sellerId: _id, status: 'success' }) }]
+            });
 
         } catch (error) {
             console.error('Error processing subscription message:', error);
         }
     }
 
+    await consumer.connect();
+    // Subscribing to admin-update-topic as per current structure, 
+    // but the payment service also sends here.
+    await consumer.subscribe({ topic: 'admin-update-topic', fromBeginning: false });
 
-    consumer.connect().then(() => {
-        consumer.subscribe({ topic: 'admin-update-topic' }).then(() => {
-            consumer.run({
-                eachMessage: handleMessage
-            })
-        })
-    })
-
+    await consumer.run({
+        eachMessage: handleMessage
+    });
 }
 
-init();
+init().catch(console.error);

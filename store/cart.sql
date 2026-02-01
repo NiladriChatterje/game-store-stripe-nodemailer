@@ -1,3 +1,4 @@
+USE xvstore;
 CREATE TABLE IF NOT EXISTS user_carts (
     id VARCHAR(255) PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,

@@ -41,7 +41,7 @@ async function createAdmin() {
     });
 
     if (user) {
-      const adminId = `admin-${user._id}`;
+      const adminId = `seller-${user._id}`;
 
       try {
         // Check if seller already exists

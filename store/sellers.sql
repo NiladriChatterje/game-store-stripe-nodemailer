@@ -1,3 +1,4 @@
+USE xvstore;
 CREATE TABLE IF NOT EXISTS sellers (
     id VARCHAR(255) PRIMARY KEY,
     username VARCHAR(255) NOT NULL,
