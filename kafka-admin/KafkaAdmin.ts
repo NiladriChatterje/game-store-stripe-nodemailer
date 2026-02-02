@@ -156,6 +156,15 @@ async function admin() {
         timeout: 60000,
       })
 
+    await admin.createTopics({
+      topics: [{
+        topic: 'subscription-notifications',
+        numPartitions: 6,
+        replicationFactor: 3,
+      }],
+      waitForLeaders: true,
+      timeout: 60000,
+    });
     // await admin
     //   .deleteTopics({ topics: ["product-topic", "product-db-save-topic"] })
 
