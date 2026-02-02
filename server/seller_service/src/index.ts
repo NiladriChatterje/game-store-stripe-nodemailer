@@ -279,11 +279,11 @@ if (cluster.isPrimary) {
         const isPlanActive = checkSubscriptionValidity(result);
 
         if (!result) {
-          res.status(200).json({ error: "Admin not found" });
+          res.status(404).json({ error: "Admin not found" });
           return;
         }
         const responseData = { ...result, isPlanActive };
-        res.status(299).json(responseData);
+        res.status(200).json(responseData);
 
         if (req.params._id.length > 0) {
           await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(responseData));
