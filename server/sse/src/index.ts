@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { Kafka } from 'kafkajs';
 import dotenv from 'dotenv';
+import { EventEmitter } from 'events';
 
 dotenv.config();
 
@@ -11,44 +12,50 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-// List of connected SSE clients
-let clients: { id: string; response: Response }[] = [];
+// Event Emitter to bridge Kafka and SSE
+const notificationEmitter = new EventEmitter();
+
+// Kafka Setup
+const KAFKA_BROKERS = process.env.KAFKA_BROKERS ? process.env.KAFKA_BROKERS.split(',') : ["localhost:9095", "localhost:9096", "localhost:9097"];
+
+const kafka = new Kafka({
+    clientId: 'sse-service',
+    brokers: KAFKA_BROKERS,
+});
+
+// Using a unique group ID per instance ensures all instances receive the notification
+// This is critical for scaling when multiple SSE server instances might be running.
+const consumer = kafka.consumer({ groupId: `sse-group-${Math.random().toString(36).substring(7)}` });
 
 // SSE endpoint
-app.get('/events', (req: Request, res: Response) => {
+app.get('/events', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Response) => {
+    const sellerId = req.query.sellerId as string;
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const clientId = Date.now().toString();
-    const newClient = { id: clientId, response: res };
-    clients.push(newClient);
+    console.log(`Client connected ${sellerId ? `for seller: ${sellerId}` : '(broadcasting all)'}`);
 
-    console.log(`Client ${clientId} connected`);
+    // Standard listener to bridge the emitter to this specific HTTP response
+    const onNotification = (data: any) => {
+        // If sellerId is provided in query, only send relevant messages
+        if (sellerId && data.payload.sellerId !== sellerId) {
+            return;
+        }
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
 
-    // Keep connection alive
+    notificationEmitter.on('notification', onNotification);
+
+    // Keep connection alive initialization
     res.write('data: {"message": "connected"}\n\n');
 
     req.on('close', () => {
-        console.log(`Client ${clientId} disconnected`);
-        clients = clients.filter(client => client.id !== clientId);
+        console.log(`Client disconnected ${sellerId ? `for seller: ${sellerId}` : ''}`);
+        notificationEmitter.removeListener('notification', onNotification);
     });
 });
-
-// Broadcast function
-const broadcast = (data: any) => {
-    clients.forEach(client => {
-        client.response.write(`data: ${JSON.stringify(data)}\n\n`);
-    });
-};
-
-// Kafka Setup
-const kafka = new Kafka({
-    clientId: 'sse-service',
-    brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
-});
-
-const consumer = kafka.consumer({ groupId: 'sse-group' });
 
 const initKafka = async () => {
     try {
@@ -56,15 +63,19 @@ const initKafka = async () => {
         await consumer.subscribe({ topic: 'subscription-notifications', fromBeginning: false });
 
         await consumer.run({
-            eachMessage: async ({ topic, partition, message }) => {
+            eachMessage: async ({ topic, message }) => {
                 if (message.value) {
-                    const payload = JSON.parse(message.value.toString());
-                    console.log('Received Kafka message:', payload);
-                    broadcast({ topic, payload });
+                    try {
+                        const payload = JSON.parse(message.value.toString());
+                        console.log(`Received notification for: ${payload.sellerId}`);
+                        // Emit to the internal emitter
+                        notificationEmitter.emit('notification', { topic, payload });
+                    } catch (e) {
+                        console.error('Error parsing Kafka message:', e);
+                    }
                 }
             },
         });
-        console.log('Kafka Consumer connected and subscribed to subscription-notifications');
     } catch (error) {
         console.error('Error in Kafka consumer:', error);
     }

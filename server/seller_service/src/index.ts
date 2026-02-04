@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process'
 import { JwtPayload } from "@clerk/types";
 import mysql from 'mysql2/promise';
 import { EventEmitter } from 'events';
+import { ShardHelper } from './utils/ShardHelper';
 
 const subscriptionEvents = new EventEmitter();
 
@@ -582,6 +583,139 @@ if (cluster.isPrimary) {
       } catch (error: any) {
         console.error('Fetch products error:', error);
         res.status(500).json({ error: error.message });
+      }
+    }
+  );
+
+  // Fetch orders assigned to a seller
+  app.get(
+    "/seller-orders/:sellerId",
+    verifyClerkToken,
+    async (req: Request<{ sellerId: string }>, res: Response) => {
+      console.log("<Fetching orders for seller>:", req.params.sellerId);
+      try {
+        const sellerId = req.params.sellerId;
+        let shardHost = 'mysql1'; // default fallback
+
+        // 1. Determine Shard Host based on Seller Address
+        let sellerState: string | undefined;
+
+        // Try Redis first
+        if (redisClient.isOpen) {
+          const cachedAdmin = await redisClient.hGet("hashSet:admin:details", sellerId);
+          if (cachedAdmin) {
+            try {
+              const adminData = JSON.parse(cachedAdmin);
+              sellerState = adminData.address?.state;
+              console.log("Found seller address in Redis:", sellerState);
+            } catch (e) {
+              console.warn("Failed to parse cached admin data", e);
+            }
+          }
+        }
+
+        // If not in Redis (or no state), fetch from Global DB
+        if (!sellerState) {
+          console.log("Seller address not in cache, fetching from Global DB...");
+          const globalConnection = await mysql.createConnection({
+            host: 'global_sql_data',
+            port: 3306,
+            user: 'root',
+            database: 'xvstore'
+          });
+
+          const [rows]: any = await globalConnection.execute(
+            'SELECT address_state FROM sellers WHERE id = ?',
+            [sellerId]
+          );
+          await globalConnection.end();
+
+          if (Array.isArray(rows) && rows.length > 0) {
+            sellerState = rows[0].address_state;
+            console.log("Fetched seller state from Global DB:", sellerState);
+          }
+        }
+
+        // Calculate Shard
+        // Priority: State -> ID (fallback)
+        const shardKey = sellerState || sellerId;
+        shardHost = ShardHelper.getShardHost(shardKey);
+        console.log(`Routing to shard: ${shardHost} (based on: ${sellerState ? 'State' : 'ID'})`);
+
+        // 2. Connect to the correct Shard
+        const connection = await mysql.createConnection({
+          host: shardHost,
+          port: 3306,
+          user: 'root',
+          database: 'xvstore'
+        });
+
+        // Query both seller_orders and their items
+        const [rows] = await connection.execute(`
+          SELECT 
+            so.id,
+            so.order_id,
+            so.seller_id,
+            so.status,
+            so.total_amount,
+            so.is_partial_fulfillment,
+            so.notes,
+            so.accepted_at,
+            so.rejection_reason,
+            so.created_at,
+            soi.product_id,
+            soi.quantity,
+            soi.price
+          FROM seller_orders so
+          LEFT JOIN seller_order_items soi ON so.id = soi.seller_order_id
+          WHERE so.seller_id = ?
+          ORDER BY so.created_at DESC
+        `, [sellerId]);
+
+        await connection.end();
+
+        const ordersMap = new Map();
+
+        if (Array.isArray(rows)) {
+          rows.forEach((row: any) => {
+            if (!ordersMap.has(row.id)) {
+              ordersMap.set(row.id, {
+                _id: row.id,
+                orderId: row.order_id,
+                seller: {
+                  _id: row.seller_id,
+                  _ref: row.seller_id
+                },
+                status: row.status,
+                totalAmount: Number(row.total_amount),
+                isPartialFulfillment: Boolean(row.is_partial_fulfillment),
+                notes: row.notes,
+                acceptedAt: row.accepted_at,
+                rejectionReason: row.rejection_reason,
+                _createdAt: row.created_at,
+                products: []
+              });
+            }
+
+            if (row.product_id) {
+              ordersMap.get(row.id).products.push({
+                product: {
+                  _id: row.product_id,
+                  _ref: row.product_id
+                },
+                quantity: row.quantity,
+                price: Number(row.price)
+              });
+            }
+          });
+        }
+
+        const result = Array.from(ordersMap.values());
+        console.log(`<Fetched ${result.length} orders for seller from ${shardHost}>`);
+        res.status(200).json(result);
+      } catch (err: any) {
+        console.error("Error fetching seller orders:", err);
+        res.status(500).json({ error: "Internal server error", details: err.message });
       }
     }
   );

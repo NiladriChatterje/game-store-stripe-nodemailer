@@ -198,6 +198,26 @@ services:
       - kafka3
       - redis_storage
 
+  sse_service:
+    build:
+      context: ./server/sse
+      dockerfile: Dockerfile
+    hostname: sse_service
+    container_name: sse_service
+    restart: always
+    volumes:
+      - ./server/sse:/app
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - KAFKA_BROKERS=kafka1:9092,kafka2:9093,kafka3:9094
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+
   mysql1:
     image: mysql:9.6.0
     container_name: mysql1
