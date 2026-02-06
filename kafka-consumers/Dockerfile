@@ -6,11 +6,9 @@ COPY . .
 
 RUN apk update && apk upgrade
 
-RUN npm install
+RUN npm ci
 
-RUN npm run build
-
-RUN adduser -S kafkaConsumers && adduser kafkaConsumers wheel
+RUN addgroup -S kafkaConsumers && adduser -S kafkaConsumers -G kafkaConsumers
 
 USER kafkaConsumers
 
