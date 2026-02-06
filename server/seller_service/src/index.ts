@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process'
 import { JwtPayload } from "@clerk/types";
 import mysql from 'mysql2/promise';
 import { EventEmitter } from 'events';
-import { ShardHelper } from './utils/ShardHelper';
+import { ShardHelper } from './utils/ShardHelper.js';
 
 const subscriptionEvents = new EventEmitter();
 

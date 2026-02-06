@@ -20,14 +20,14 @@ CREATE TABLE IF NOT EXISTS product_images (
     size INT,
     base64 LONGTEXT,
     extension VARCHAR(10),
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    CONSTRAINT fk_product_images_product_id FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS product_keywords (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_id VARCHAR(255) NOT NULL,
     keyword VARCHAR(255) NOT NULL,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    CONSTRAINT fk_product_keywords_product_id FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS product_quantities (
@@ -42,9 +42,9 @@ CREATE TABLE IF NOT EXISTS product_quantities (
 CREATE TABLE IF NOT EXISTS product_sellers (
     product_id VARCHAR(255) NOT NULL,
     seller_id VARCHAR(255) NOT NULL,
-    PRIMARY KEY (product_id, seller_id),
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-    FOREIGN KEY (seller_id) REFERENCES sellers(id) ON DELETE CASCADE
+    CONSTRAINT pk_product_sellers PRIMARY KEY (product_id, seller_id),
+    CONSTRAINT fk_product_sellers_product_id FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    -- FOREIGN KEY (seller_id) REFERENCES sellers(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS product_embeddings (
