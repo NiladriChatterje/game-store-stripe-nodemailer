@@ -198,6 +198,18 @@ services:
       - kafka3
       - redis_storage
 
+  kafka-consumers:
+    container_name: kafka-consumers
+    build:
+      context: ./kafka-consumers
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+
   sse_service:
     build:
       context: ./server/sse
