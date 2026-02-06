@@ -5,7 +5,7 @@ import { sanityConfig } from "@utils";
 
 const kafka: Kafka = new Kafka({
     clientId: "xvstore-refund",
-    brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
+    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 
 async function main() {

@@ -8,7 +8,7 @@ dotenv.config();
 
 const kafka = new Kafka({
     clientId: 'xv-store',
-    brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
+    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 
 async function init() {

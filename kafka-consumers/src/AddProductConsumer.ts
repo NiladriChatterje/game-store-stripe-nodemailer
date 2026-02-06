@@ -7,7 +7,7 @@ import { ShardRouter, PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/Sh
 
 const kafka: Kafka = new Kafka({
   clientId: "xvstore",
-  brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
+  brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 
 // MySQL Connection Pools for Shards

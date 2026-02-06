@@ -7,7 +7,7 @@ import { uuidv7 as uuid } from 'uuidv7'
 
 const kafka: Kafka = new Kafka({
     clientId: "xvstore",
-    brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
+    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 
 

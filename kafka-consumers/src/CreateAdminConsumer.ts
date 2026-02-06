@@ -7,7 +7,7 @@ import { createClient as redisClient } from "redis";
 async function createAdmin() {
   const kafka = new Kafka({
     clientId: "xvstore",
-    brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
+    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
   });
 
   const redisC = redisClient();
