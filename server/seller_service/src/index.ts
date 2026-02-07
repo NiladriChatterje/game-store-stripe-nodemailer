@@ -14,10 +14,7 @@ import { ClerkClient, verifyToken } from "@clerk/backend";
 import { spawn } from 'node:child_process'
 import { JwtPayload } from "@clerk/types";
 import mysql from 'mysql2/promise';
-import { EventEmitter } from 'events';
 import { ShardHelper } from './utils/ShardHelper.js';
-
-const subscriptionEvents = new EventEmitter();
 
 
 dotenv.config();
@@ -101,19 +98,6 @@ if (cluster.isPrimary) {
     next();
   });
 
-  // Initialize Kafka consumer for subscription notifications
-  const notificationConsumer = kafka.consumer({ groupId: 'seller-service-notifications-' + Math.random().toString(36).substring(7) });
-  await notificationConsumer.connect();
-  await notificationConsumer.subscribe({ topic: 'subscription-notifications', fromBeginning: false });
-  await notificationConsumer.run({
-    eachMessage: async ({ message }) => {
-      if (message.value) {
-        const payload = JSON.parse(message.value.toString());
-        console.log("<Subscription notification received>:", payload);
-        subscriptionEvents.emit('status-update', payload);
-      }
-    }
-  });
 
   //#region clerk_middleware
   const verifyClerkToken = async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
@@ -741,26 +725,6 @@ if (cluster.isPrimary) {
     });
 
     res.send("SMS sent");
-  });
-
-  app.get("/subscription-status/:sellerId", (req: Request<{ sellerId: string }>, res: Response) => {
-    const { sellerId } = req.params;
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    const onStatusUpdate = (payload: any) => {
-      if (payload.sellerId === sellerId) {
-        res.write(`data: ${JSON.stringify(payload)}\n\n`);
-      }
-    };
-
-    subscriptionEvents.on('status-update', onStatusUpdate);
-
-    req.on('close', () => {
-      subscriptionEvents.off('status-update', onStatusUpdate);
-    });
   });
   //#endregion 
 
