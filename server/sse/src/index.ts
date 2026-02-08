@@ -35,14 +35,21 @@ app.get('/events', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Respon
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    console.log(`Client connected ${sellerId ? `for seller: ${sellerId}` : '(broadcasting all)'}`);
+    console.log(`[SSE] Client connected ${sellerId ? `for seller: ${sellerId}` : '(broadcasting all)'}`);
+    console.log(`[SSE] Total active listeners: ${notificationEmitter.listenerCount('notification')}`);
 
     // Standard listener to bridge the emitter to this specific HTTP response
     const onNotification = (data: any) => {
+        console.log(`[SSE] 📨 Notification received:`, JSON.stringify(data));
+        console.log(`[SSE] 🔍 Checking sellerId - Query: ${sellerId}, Payload: ${data.payload?.sellerId}`);
+
         // If sellerId is provided in query, only send relevant messages
         if (sellerId && data.payload.sellerId !== sellerId) {
+            console.log(`[SSE] Seller ID mismatch - skipping message`);
             return;
         }
+
+        console.log(`[SSE] Sending notification to client for seller: ${sellerId || 'all'}`);
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
@@ -50,34 +57,52 @@ app.get('/events', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Respon
 
     // Keep connection alive initialization
     res.write('data: {"message": "connected"}\n\n');
+    console.log(`[SSE] 📤 Sent connection confirmation to client`);
 
     req.on('close', () => {
-        console.log(`Client disconnected ${sellerId ? `for seller: ${sellerId}` : ''}`);
+        console.log(`[SSE] ❌ Client disconnected ${sellerId ? `for seller: ${sellerId}` : ''}`);
         notificationEmitter.removeListener('notification', onNotification);
+        console.log(`[SSE] Remaining listeners: ${notificationEmitter.listenerCount('notification')}`);
     });
 });
 
 const initKafka = async () => {
     try {
+        console.log('[KAFKA] 🔌 Connecting to Kafka brokers:', KAFKA_BROKERS);
         await consumer.connect();
+        console.log('[KAFKA] ✅ Connected to Kafka');
+
         await consumer.subscribe({ topic: 'subscription-notifications', fromBeginning: false });
+        console.log('[KAFKA] 📡 Subscribed to topic: subscription-notifications');
 
         await consumer.run({
             eachMessage: async ({ topic, message }) => {
+                console.log('[KAFKA] 📬 Raw message received from topic:', topic);
+
                 if (message.value) {
                     try {
-                        const payload = JSON.parse(message.value.toString());
-                        console.log(`Received notification for: ${payload.sellerId}`);
+                        const rawValue = message.value.toString();
+                        console.log('[KAFKA] 📄 Raw message value:', rawValue);
+
+                        const payload = JSON.parse(rawValue);
+                        console.log('[KAFKA] 📦 Parsed payload:', JSON.stringify(payload, null, 2));
+                        console.log(`[KAFKA] 🎯 Notification for sellerId: ${payload.sellerId}, status: ${payload.status}`);
+
                         // Emit to the internal emitter
-                        notificationEmitter.emit('notification', { topic, payload });
+                        const eventData = { topic, payload };
+                        console.log('[KAFKA] 🔔 Emitting notification event:', JSON.stringify(eventData));
+                        notificationEmitter.emit('notification', eventData);
+                        console.log('[KAFKA] ✅ Notification emitted successfully');
                     } catch (e) {
-                        console.error('Error parsing Kafka message:', e);
+                        console.error('[KAFKA] ❌ Error parsing Kafka message:', e);
+                        console.error('[KAFKA] Raw value that failed:', message.value.toString());
                     }
                 }
             },
         });
+        console.log('[KAFKA] 🏃 Consumer is running and waiting for messages...');
     } catch (error) {
-        console.error('Error in Kafka consumer:', error);
+        console.error('[KAFKA] ❌ Error in Kafka consumer:', error);
     }
 };
 

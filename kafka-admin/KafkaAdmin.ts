@@ -156,6 +156,19 @@ async function admin() {
         timeout: 60000,
       })
 
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "admin-subscriptions-topic",
+            numPartitions: 5,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      })
+
     await admin.createTopics({
       topics: [{
         topic: 'subscription-notifications',
