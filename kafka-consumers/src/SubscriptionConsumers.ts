@@ -85,7 +85,6 @@ async function init() {
             // 4. Store subscription details in Redis hash
             const REDIS_KEY = 'admin:subscription:details';
             const subscriptionData = {
-                sellerId: _id,
                 transactionId: subscriptionPlan.transactionId,
                 orderId: subscriptionPlan.orderId,
                 paymentSignature: subscriptionPlan.paymentSignature,

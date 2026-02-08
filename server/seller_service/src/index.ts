@@ -201,11 +201,23 @@ if (cluster.isPrimary) {
       try {
         if (redisClient.isOpen) {
           const result = await redisClient.hGet("hashSet:admin:details", req.params._id);
+          const subscriptionPlan = await redisClient.hGet("admin:subscription:details", req.params._id);
           if (result) {
             console.log("<Redis admin hit>")
             const adminData = JSON.parse(result);
-            const isPlanActive = checkSubscriptionValidity(adminData);
-            res.json({ ...adminData, isPlanActive });
+
+            if (subscriptionPlan) {
+              const planExpireDate = JSON.parse(subscriptionPlan).planExpireDate;
+              const currentTime = new Date().getTime();
+              const expireTime = new Date(planExpireDate).getTime();
+              if (expireTime > currentTime) {
+                res.json({ ...adminData, isPlanActive: true });
+              } else {
+                await redisClient.hdel("admin:subscription:details", req.params._id);
+                res.json({ ...adminData, isPlanActive: false });
+              }
+            }
+            res.json({ ...adminData, isPlanActive: false });
             return;
           }
         }
