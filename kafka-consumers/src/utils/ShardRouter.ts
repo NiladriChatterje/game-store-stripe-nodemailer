@@ -9,18 +9,18 @@ export interface ShardConfig {
 }
 
 export const GLOBAL_DB_CONFIG: ShardConfig = {
-    host: 'localhost',
-    port: 3311, // global_sql_data
+    host: 'global_sql_data',
+    port: 3306, // global_sql_data
     user: 'root',
     password: '',
     database: 'xvstore'
 };
 
 export const PRODUCT_SHARDS_CONFIG: ShardConfig[] = [
-    { host: 'localhost', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql1
-    { host: 'localhost', port: 3307, user: 'root', password: '', database: 'xvstore' }, // mysql2
-    { host: 'localhost', port: 3308, user: 'root', password: '', database: 'xvstore' }, // mysql3
-    { host: 'localhost', port: 3309, user: 'root', password: '', database: 'xvstore' }, // mysql4
+    { host: 'mysql1', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql1
+    { host: 'mysql2', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql2
+    { host: 'mysql3', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql3
+    { host: 'mysql4', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql4
 ];
 
 export class ShardRouter {
