@@ -12,5 +12,5 @@ RUN addgroup -S kafkaConsumers && adduser -S kafkaConsumers -G kafkaConsumers
 
 USER kafkaConsumers
 
-CMD ["npm", "run", "start"]
+CMD ["npm", "run", "delete","&&","npm","run","start"]
 

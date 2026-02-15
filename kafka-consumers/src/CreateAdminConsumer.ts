@@ -36,8 +36,8 @@ async function createAdmin() {
     // Create MySQL connection
     const mysql = await import('mysql2/promise');
     const connection = await mysql.createConnection({
-      host: 'localhost',
-      port: 3311,
+      host: 'global_sql_data',
+      port: 3306,
       user: 'root',
       database: 'xvstore'
     });

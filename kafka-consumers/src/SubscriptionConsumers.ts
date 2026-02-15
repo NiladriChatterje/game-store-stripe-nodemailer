@@ -21,10 +21,7 @@ async function init() {
 
     // Initialize Redis client
     const redisClient = createClient({
-        socket: {
-            host: 'redis_server',
-            port: 6379
-        }
+        url: 'redis://redis_storage:6379'
     });
 
     redisClient.on('error', (err) => console.error('Redis Client Error:', err));
