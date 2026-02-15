@@ -21,7 +21,12 @@ const nodemailerObj = nodemailer.createTransport({
 });
 
 const sanityClient = SanityClient(sanityConfig);
-const redisClient = RedisClient();
+const redisClient = RedisClient({
+    socket: {
+        host: 'redis_storage',
+        port: 6379
+    }
+});
 
 const consumer: Consumer = kafka.consumer({
     groupId: 'user-data-creation-consumer',
@@ -125,4 +130,4 @@ async function main() {
     }
 }
 
-main();
+main().catch(console.error);

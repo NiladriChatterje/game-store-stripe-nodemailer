@@ -27,7 +27,12 @@ const globalPool = mysql.createPool({
 });
 
 async function main() {
-  const redisClient = RedisClient();
+  const redisClient = RedisClient({
+    socket: {
+      host: 'redis_storage',
+      port: 6379
+    }
+  });
   await redisClient.connect();
 
   const consumer = kafka.consumer({
@@ -163,6 +168,6 @@ async function main() {
   });
 }
 
-main();
+main().catch(console.error);
 
 

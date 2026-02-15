@@ -10,7 +10,9 @@ async function createAdmin() {
     brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
   });
 
-  const redisC = redisClient();
+  const redisC = redisClient({
+    url: "redis://redis_storage:6379"
+  });
   await redisC.connect()
   const consumer = kafka.consumer({
     groupId: "admin-record",
@@ -123,4 +125,4 @@ async function createAdmin() {
   });
 }
 
-createAdmin()
+createAdmin().catch(console.error);

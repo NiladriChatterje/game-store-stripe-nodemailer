@@ -60,3 +60,4 @@ async function updateAdminRecord() {
 
   consumer.run({ eachMessage: handleMessage });
 }
+updateAdminRecord().catch(console.error);

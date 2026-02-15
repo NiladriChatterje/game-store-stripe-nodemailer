@@ -9,7 +9,7 @@ dotenv.config();
 
 const kafka = new Kafka({
     clientId: 'xv-store',
-    brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
+    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 const nodemailerObj = nodemailer.createTransport({
     service: 'gmail',
@@ -20,7 +20,9 @@ const nodemailerObj = nodemailer.createTransport({
 });
 
 const sanityClient = SanityClient(sanityConfig);
-const redisClient = RedisClient();
+const redisClient = RedisClient({
+    url: 'redis://redis_storage:6379'
+});
 
 const consumer: Consumer = kafka.consumer({
     groupId: 'user-data-creation-consumer',
@@ -93,4 +95,4 @@ async function main() {
     }
 }
 
-main();
+main().catch(console.error);

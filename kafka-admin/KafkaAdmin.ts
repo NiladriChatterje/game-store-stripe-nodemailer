@@ -2,7 +2,9 @@ import { Kafka } from "kafkajs";
 
 const kafka = new Kafka({
   clientId: "xv-store",
-  brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
+  brokers: ["127.0.0.1:9095", "127.0.0.1:9096", "127.0.0.1:9097"],
+  connectionTimeout: 10000,
+  authenticationTimeout: 10000,
   retry: {
     retries: 5,
   },
@@ -14,8 +16,11 @@ async function admin() {
       retries: 5,
     },
   });
+  console.log("Connecting to admin...");
   await admin.connect();
+  console.log("Connected successfully!");
   try {
+    console.log("Listing topics...");
     console.log(await admin.listTopics());
 
 

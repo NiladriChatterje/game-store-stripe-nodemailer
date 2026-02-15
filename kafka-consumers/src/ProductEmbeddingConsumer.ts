@@ -31,7 +31,9 @@ if (cluster.isPrimary) {
 
   const sanityClient = SanityClient(sanityConfig);
 
-  const redisClient = RedisClient();
+  const redisClient = RedisClient({
+    url: "redis://redis_storage:6379"
+  });
   await redisClient.connect();
   async function main() {
     const consumer = kafka.consumer({
@@ -87,5 +89,5 @@ if (cluster.isPrimary) {
     });
   }
 
-  main();
+  main().catch(console.error);
 }

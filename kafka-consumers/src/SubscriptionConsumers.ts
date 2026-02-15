@@ -21,7 +21,10 @@ async function init() {
 
     // Initialize Redis client
     const redisClient = createClient({
-        url: process.env.REDIS_URL || 'redis://localhost:6379'
+        socket: {
+            host: 'redis_server',
+            port: 6379
+        }
     });
 
     redisClient.on('error', (err) => console.error('Redis Client Error:', err));

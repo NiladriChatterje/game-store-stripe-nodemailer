@@ -12,7 +12,9 @@ const kafka: Kafka = new Kafka({
 
 
 async function main() {
-    const redisClient = RedisClient();
+    const redisClient = RedisClient({
+        url: "redis://redis_storage:6379"
+    });
     await redisClient.connect();
     const sanityClient: SanityClient = createClient({
         ...sanityConfig,
@@ -148,5 +150,5 @@ async function main() {
     });
 }
 
-main();
+main().catch(console.error);
 

@@ -16,15 +16,13 @@ app.use(express.json());
 const notificationEmitter = new EventEmitter();
 
 // Kafka Setup
-const KAFKA_BROKERS = process.env.KAFKA_BROKERS ? process.env.KAFKA_BROKERS.split(',') : ["localhost:9095", "localhost:9096", "localhost:9097"];
+const KAFKA_BROKERS = process.env.KAFKA_BROKERS ? process.env.KAFKA_BROKERS.split(',') : ["kafka1:9092", "kafka2:9093", "kafka3:9094"];
 
 const kafka = new Kafka({
     clientId: 'sse-service',
     brokers: KAFKA_BROKERS,
 });
 
-// Using a unique group ID per instance ensures all instances receive the notification
-// This is critical for scaling when multiple SSE server instances might be running.
 const consumer = kafka.consumer({ groupId: `sse-group-${Math.random().toString(36).substring(7)}` });
 
 // SSE endpoint
@@ -57,12 +55,9 @@ app.get('/events', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Respon
 
     // Keep connection alive initialization
     res.write('data: {"message": "connected"}\n\n');
-    console.log(`[SSE] 📤 Sent connection confirmation to client`);
 
     req.on('close', () => {
-        console.log(`[SSE] ❌ Client disconnected ${sellerId ? `for seller: ${sellerId}` : ''}`);
         notificationEmitter.removeListener('notification', onNotification);
-        console.log(`[SSE] Remaining listeners: ${notificationEmitter.listenerCount('notification')}`);
     });
 });
 

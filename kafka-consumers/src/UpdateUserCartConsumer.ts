@@ -8,11 +8,13 @@ import { uuidv4 } from 'uuidv7';
 
 const kafka = new Kafka({
     clientId: 'xv-store',
-    brokers: ["localhost:9095", "localhost:9096", "localhost:9097"],
+    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 
 const sanityClient = SanityClient(sanityConfig);
-const redis = RedisClient();
+const redis = RedisClient({
+    url: "redis://redis_storage:6379"
+});
 
 async function handleMessages({ partition, message, heartbeat }: EachMessagePayload) {
     const UserCartPayload: { _id: string; cart: any[] } = JSON.parse(message.value.toString());
@@ -53,7 +55,7 @@ async function handleMessages({ partition, message, heartbeat }: EachMessagePayl
 async function main() {
     try {
         await redis.connect();
-    } catch (e) {
+    } catch (e: any) {
         console.log(e.message)
     }
 
@@ -65,8 +67,13 @@ async function main() {
         },
     });
 
+    await consumer.connect();
+    await consumer.subscribe({ topic: 'update-user-cart-topic' });
+
     consumer.run({
         eachMessage: handleMessages
     })
 
 }
+
+main().catch(console.error);
