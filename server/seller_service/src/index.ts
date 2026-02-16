@@ -380,75 +380,136 @@ if (cluster.isPrimary) {
           }
         }
 
-        // Get admin data with orders and products
-        // First, let's try to find the admin with better error handling and debug logging
-        console.log(`Searching for admin with ID: ${adminId}`);
-        console.log(`Date filters - From: ${fromDate}, To: ${toDate}`);
+        // 1. Get Seller State from Global DB to determine shard
+        let sellerState: string | null = null;
+        let shardHost = '';
 
-        // Build the query with optional date filtering
-        let query = `*[_type=="admin" && _id==$adminId][0]{
-          _id,
-          username,
-          email,
-          ordersServed[]->`;
-
-        // Add date filtering to orders if dates are provided
-        if (fromDate && toDate) {
-          query += `[_createdAt >= $fromDate && _createdAt <= $toDate]`;
-        }
-
-        query += `{
-            _id,
-            _createdAt,
-            amount,
-            status,
-            quantity,
-            customer->{username},
-            product[]->{price}
-          },
-          productReferenceAfterListing[]->{
-            _id,
-            productName,
-            price,
-            quantity
+        // Check Redis for cached seller state/details
+        if (redisClient.isOpen) {
+          const cachedAdmin = await redisClient.hGet("hashSet:admin:details", adminId);
+          if (cachedAdmin) {
+            try {
+              const adminData = JSON.parse(cachedAdmin);
+              sellerState = adminData.address?.state;
+            } catch (e) {
+              console.warn("DASHBOARD: Failed to parse cached admin data", e);
+            }
           }
-        }`;
+        }
 
-        const queryParams: any = { adminId };
+        if (!sellerState) {
+          const globalConnection = await mysql.createConnection({
+            host: 'global_sql_data',
+            port: 3306,
+            user: 'root',
+            database: 'xvstore'
+          });
+
+          const [rows]: any = await globalConnection.execute(
+            'SELECT address_state FROM sellers WHERE id = ?',
+            [adminId]
+          );
+          await globalConnection.end();
+
+          if (Array.isArray(rows) && rows.length > 0) {
+            sellerState = rows[0].address_state;
+          }
+        }
+
+        const shardKey = sellerState || adminId;
+        shardHost = ShardHelper.getShardHost(shardKey);
+
+        // 2. Connect to the Seller's Shard
+        const shardConnection = await mysql.createConnection({
+          host: shardHost,
+          port: 3306,
+          user: 'root',
+          database: 'xvstore'
+        });
+
+        // 3. Execute Metrics Queries on the Shard
+        // Base where clause for date filters
+        let dateFilter = '';
+        const queryParams: any[] = [adminId];
         if (fromDate && toDate) {
-          queryParams.fromDate = fromDate;
-          queryParams.toDate = toDate;
+          dateFilter = ' AND created_at BETWEEN ? AND ?';
+          queryParams.push(fromDate, toDate);
         }
 
-        const adminData = await sanityClient.fetch(query, queryParams);
+        // Total Sales & Products Sold
+        const [salesRows]: any = await shardConnection.execute(`
+          SELECT 
+            SUM(so.total_amount) as totalSales,
+            SUM(soi.quantity) as productsSold
+          FROM seller_orders so
+          LEFT JOIN (
+            SELECT seller_order_id, SUM(quantity) as quantity 
+            FROM seller_order_items 
+            GROUP BY seller_order_id
+          ) soi ON so.id = soi.seller_order_id
+          WHERE so.seller_id = ? ${dateFilter}
+        `, queryParams);
 
-        console.log(`Admin query result:`, adminData);
+        // Orders Served (Assuming 'ready_to_ship' or any non-pending/non-rejected counts as "served" in this context)
+        const [ordersServedRows]: any = await shardConnection.execute(`
+          SELECT COUNT(*) as count 
+          FROM seller_orders 
+          WHERE seller_id = ? AND status NOT IN ('pending', 'rejected') ${dateFilter}
+        `, queryParams);
 
-        if (!adminData) {
-          res.status(404).json({ error: 'Admin not found' });
-          return;
-        }
+        // Active Customers (Unique customers who have ordered)
+        const [customerRows]: any = await shardConnection.execute(`
+          SELECT COUNT(DISTINCT o.customer_id) as count
+          FROM seller_orders so
+          JOIN orders o ON so.order_id = o.id
+          WHERE so.seller_id = ? ${dateFilter}
+        `, queryParams);
 
-        // Calculate metrics
-        const orders = adminData.ordersServed || [];
-        const products = adminData.productReferenceAfterListing || [];
+        // Monthly Revenue (Current Month)
+        const [monthlyRevRows]: any = await shardConnection.execute(`
+          SELECT SUM(total_amount) as count
+          FROM seller_orders
+          WHERE seller_id = ? 
+          AND MONTH(created_at) = MONTH(CURRENT_DATE()) 
+          AND YEAR(created_at) = YEAR(CURRENT_DATE())
+        `, [adminId]);
 
-        // Total sales and profit calculation
-        const totalSales = orders.reduce((sum: number, order: any) => sum + (order.amount || 0), 0);
-        const totalProfit = Math.round(totalSales * 0.4); // Assuming 40% profit margin
+        await shardConnection.end();
 
-        // Orders served (completed orders)
-        const ordersServed = orders.filter((order: any) => order.status === 'shipped').length;
+        // 4. Aggregate Inventory across ALL shards (since products are sharded by productId)
+        let totalProductsInInventory = 0;
+        const shardHosts = ['mysql1', 'mysql2', 'mysql3', 'mysql4'];
 
-        // Active customers (unique customers who have ordered)
-        const uniqueCustomers = new Set(orders.map((order: any) => order.customer?._id)).size;
+        const inventoryPromises = shardHosts.map(async (host) => {
+          try {
+            const conn = await mysql.createConnection({
+              host,
+              port: 3306,
+              user: 'root',
+              database: 'xvstore'
+            });
+            const [rows]: any = await conn.execute(
+              'SELECT COUNT(DISTINCT product_id) as count FROM seller_product_details WHERE seller_id = ?',
+              [adminId]
+            );
+            await conn.end();
+            return Number(rows[0]?.count || 0);
+          } catch (err) {
+            console.error(`Inventory check failed on ${host}:`, err);
+            return 0;
+          }
+        });
 
-        // Monthly revenue (current month estimate)
-        const currentDate = new Date();
-        const monthlyRevenue = Math.round(totalSales * 1.2); // Estimate based on total sales
+        const inventoryResults = await Promise.all(inventoryPromises);
+        totalProductsInInventory = inventoryResults.reduce((sum, h) => sum + h, 0);
 
-        // Products sold (sum of quantities from all orders)
-        const productsSold = orders.reduce((sum: number, order: any) => sum + (order.quantity || 0), 0);
+        // 5. Finalize Metrics
+        const totalSales = Number(salesRows[0]?.totalSales || 0);
+        const productsSold = Number(salesRows[0]?.productsSold || 0);
+        const totalProfit = Math.round(totalSales * 0.4);
+        const ordersServed = Number(ordersServedRows[0]?.count || 0);
+        const activeCustomers = Number(customerRows[0]?.count || 0);
+        const monthlyRevenue = Number(monthlyRevRows[0]?.count || 0);
 
         const metrics = {
           totalSales: {
@@ -467,9 +528,9 @@ if (cluster.isPrimary) {
             numericValue: ordersServed
           },
           activeCustomers: {
-            value: uniqueCustomers.toLocaleString(),
+            value: activeCustomers.toLocaleString(),
             trend: '+12.4% from last month',
-            numericValue: uniqueCustomers
+            numericValue: activeCustomers
           },
           monthlyRevenue: {
             value: `$${monthlyRevenue.toLocaleString()}`,
@@ -482,19 +543,18 @@ if (cluster.isPrimary) {
             numericValue: productsSold
           },
           totalProductsInInventory: {
-            value: products.length,
-            trend: '+9.2% from last month',
-            numericValue: productsSold
+            value: totalProductsInInventory,
+            trend: '+0% from last month',
+            numericValue: totalProductsInInventory
           }
         };
 
-        // Cache the result for 1 hour (only cache non-filtered requests)
+        // Cache the result (only cache non-filtered requests)
         if (redisClient.isOpen && !fromDate && !toDate) {
           await redisClient.hSet(`dashboardMetrics:admin:${adminId}`, 'metrics', JSON.stringify(metrics));
           await redisClient.expire(`dashboardMetrics:admin:${adminId}`, 3600);
         }
 
-        // Add date range info to response if filtering was applied
         const response = {
           ...metrics,
           ...(fromDate && toDate && {

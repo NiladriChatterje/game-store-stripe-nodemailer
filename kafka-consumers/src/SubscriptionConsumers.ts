@@ -33,6 +33,7 @@ async function init() {
     async function handleMessage({ message }: EachMessagePayload) {
         try {
             const payload = JSON.parse(message.value.toString());
+            console.log('RECV: [SubscriptionConsumers] message received on admin-subscriptions-topic');
             const { _id, subscriptionPlan } = payload;
 
             if (!_id || !subscriptionPlan) {

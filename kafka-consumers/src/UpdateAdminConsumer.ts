@@ -35,13 +35,15 @@ async function updateAdminRecord() {
   }: EachMessagePayload) {
     if (!message || !message.value) return;
 
+    const payload = JSON.parse(message.value.toString());
+    console.log(`RECV: [UpdateAdminConsumer] message received on topic: ${topic}`);
     const {
       _id,
       gstin,
       address,
       email,
       phone,
-    }: AdminFieldsType = JSON.parse(message.value.toString());
+    }: AdminFieldsType = payload;
 
     try {
       const adminId = `seller-${_id}`;
