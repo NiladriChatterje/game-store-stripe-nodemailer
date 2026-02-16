@@ -16,7 +16,7 @@ app.use(express.json());
 const notificationEmitter = new EventEmitter();
 
 // Kafka Setup
-const KAFKA_BROKERS = process.env.KAFKA_BROKERS ? process.env.KAFKA_BROKERS.split(',') : ["kafka1:9092", "kafka2:9093", "kafka3:9094"];
+const KAFKA_BROKERS = ["kafka1:9092", "kafka2:9093", "kafka3:9094"];
 
 const kafka = new Kafka({
     clientId: 'sse-service',

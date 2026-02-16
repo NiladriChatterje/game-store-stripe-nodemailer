@@ -22,7 +22,7 @@ services:
       - "29092:29092"
     environment:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:19092,LOCALHOST://localhost:9095,EXTERNAL://kafka1:9092,DOCKER://host.docker.internal:29092
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:19092,LOCALHOST://0.0.0.0:9095,EXTERNAL://0.0.0.0:9092,DOCKER://0.0.0.0:29092
+      # KAFKA_LISTENERS: INTERNAL://0.0.0.0:19092,LOCALHOST://0.0.0.0:9095,EXTERNAL://0.0.0.0:9092,DOCKER://0.0.0.0:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
@@ -44,7 +44,7 @@ services:
       - "29093:29093"
     environment:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:19093,LOCALHOST://localhost:9096,EXTERNAL://kafka2:9093,DOCKER://host.docker.internal:29093
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:19093,LOCALHOST://0.0.0.0:9096,EXTERNAL://0.0.0.0:9093,DOCKER://0.0.0.0:29093
+      # KAFKA_LISTENERS: INTERNAL://0.0.0.0:19093,LOCALHOST://0.0.0.0:9096,EXTERNAL://0.0.0.0:9093,DOCKER://0.0.0.0:29093
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
@@ -66,7 +66,7 @@ services:
       - "29094:29094"
     environment:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:19094,LOCALHOST://localhost:9097,EXTERNAL://kafka3:9094,DOCKER://host.docker.internal:29094
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:19094,LOCALHOST://0.0.0.0:9097,EXTERNAL://0.0.0.0:9094,DOCKER://0.0.0.0:29094
+      # KAFKA_LISTENERS: INTERNAL://0.0.0.0:19094,LOCALHOST://0.0.0.0:9097,EXTERNAL://0.0.0.0:9094,DOCKER://0.0.0.0:29094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
@@ -76,162 +76,6 @@ services:
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
     depends_on:
       - zoo1
-
-  redis_storage:
-    image: redis
-    hostname: redis
-    container_name: redis_server
-    restart: always
-    ports:
-      - "6379:6379"
-
-  # redis_location:
-  #   image: redis
-  #   hostname: redis_location
-  #   container_name: redis_location
-  #   restart: always
-  #   ports:
-  #     - "6380:6379"
-
-  seller_service:
-    build:
-      context: ./server/seller_service
-      dockerfile: Dockerfile
-    hostname: seller_service
-    container_name: seller_service
-    restart: always
-    volumes:
-      - ./server/seller_service:/app
-      # - ./server/seller_service/node_modules:/app/node_modules
-    ports:
-      - "5003:5003"
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
-
-  userdata_service:
-    build:
-      context: ./server/userData_service
-      dockerfile: Dockerfile
-    hostname: userData_service
-    container_name: userData_service
-    restart: always
-    volumes:
-      - ./server/userData_service:/app
-      # - ./server/userData_service/node_modules:/app/node_modules
-    ports:
-      - "5001:5001"
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
-
-  payment_service:
-    build:
-      context: ./server/payment_service
-      dockerfile: Dockerfile
-    hostname: payment_service
-    container_name: payment_service
-    restart: always
-    volumes:
-      - ./server/payment_service:/app
-      # - ./server/payment_service/node_modules:/app/node_modules
-    ports:
-      - "5000:5000"
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
-
-  product_service:
-    build:
-      context: ./server/product_service
-      dockerfile: Dockerfile
-    hostname: product_service
-    container_name: product_service
-    restart: always
-    volumes:
-      - ./server/product_service:/app
-      # - ./server/product_service/node_modules:/app/node_modules
-    ports:
-      - "5002:5002"
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
-
-  search_engine_service:
-    build:
-      context: ./server/search_engine_service
-      dockerfile: Dockerfile
-    hostname: search_engine_service
-    container_name: search_engine_service
-    restart: always
-    volumes:
-      - ./server/search_engine_service:/app
-      # - ./server/search_engine_service/node_modules:/app/node_modules
-    ports:
-      - "5005:5005"
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
-
-  shipper_service:
-    build:
-      context: ./server/shipper_service
-      dockerfile: Dockerfile
-    hostname: shipper_service
-    container_name: shipper_service
-    restart: always
-    volumes:
-      - ./server/shipper_service:/app
-      # - ./server/shipper_service/node_modules:/app/node_modules
-    ports:
-      - "5004:5004"
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
-
-  kafka-consumers:
-    container_name: kafka-consumers
-    build:
-      context: ./kafka-consumers
-      dockerfile: Dockerfile
-    restart: always
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
-
-  sse_service:
-    build:
-      context: ./server/sse
-      dockerfile: Dockerfile
-    hostname: sse_service
-    container_name: sse_service
-    restart: always
-    volumes:
-      - ./server/sse:/app
-    ports:
-      - "4000:4000"
-    environment:
-      - PORT=4000
-      - KAFKA_BROKERS=kafka1:9092,kafka2:9093,kafka3:9094
-    depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
-      - redis_storage
 
   mysql1:
     image: mysql:9.6.0
@@ -304,6 +148,176 @@ services:
       - "3311:3306"
     volumes:
       - global_sql_data:/var/lib/mysql
+
+  redis_storage:
+    image: redis
+    hostname: redis
+    container_name: redis_server
+    restart: always
+    ports:
+      - "6379:6379"
+
+  # redis_location:
+  #   image: redis
+  #   hostname: redis_location
+  #   container_name: redis_location
+  #   restart: always
+  #   ports:
+  #     - "6380:6379"
+
+  seller_service:
+    build:
+      context: ./server/seller_service
+      dockerfile: Dockerfile
+    hostname: seller_service
+    container_name: seller_service
+    restart: always
+    volumes:
+      - ./server/seller_service:/app
+      - /app/node_modules
+      # - ./server/seller_service/node_modules:/app/node_modules
+    ports:
+      - "5003:5003"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+      - global_sql_data
+
+  userdata_service:
+    build:
+      context: ./server/userData_service
+      dockerfile: Dockerfile
+    hostname: userData_service
+    container_name: userData_service
+    restart: always
+    volumes:
+      - ./server/userData_service:/app
+      - /app/node_modules
+      # - ./server/userData_service/node_modules:/app/node_modules
+    ports:
+      - "5001:5001"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+      - global_sql_data
+
+  payment_service:
+    build:
+      context: ./server/payment_service
+      dockerfile: Dockerfile
+    hostname: payment_service
+    container_name: payment_service
+    restart: always
+    volumes:
+      - ./server/payment_service:/app
+      - /app/node_modules
+      # - ./server/payment_service/node_modules:/app/node_modules
+    ports:
+      - "5000:5000"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+
+  product_service:
+    build:
+      context: ./server/product_service
+      dockerfile: Dockerfile
+    hostname: product_service
+    container_name: product_service
+    restart: always
+    volumes:
+      - ./server/product_service:/app
+      - /app/node_modules
+      # - ./server/product_service/node_modules:/app/node_modules
+    ports:
+      - "5002:5002"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+
+  search_engine_service:
+    build:
+      context: ./server/search_engine_service
+      dockerfile: Dockerfile
+    hostname: search_engine_service
+    container_name: search_engine_service
+    restart: always
+    volumes:
+      - ./server/search_engine_service:/app
+      - /app/node_modules
+      # - ./server/search_engine_service/node_modules:/app/node_modules
+    ports:
+      - "5005:5005"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+
+  shipper_service:
+    build:
+      context: ./server/shipper_service
+      dockerfile: Dockerfile
+    hostname: shipper_service
+    container_name: shipper_service
+    restart: always
+    volumes:
+      - ./server/shipper_service:/app
+      - /app/node_modules
+      # - ./server/shipper_service/node_modules:/app/node_modules
+    ports:
+      - "5004:5004"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+      - global_sql_data
+
+  kafka-consumers:
+    container_name: kafka-consumers
+    build:
+      context: ./kafka-consumers
+      dockerfile: Dockerfile
+    restart: always
+    volumes:
+      - ./kafka-consumers:/app
+      - /app/node_modules
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+      - global_sql_data
+
+  sse_service:
+    build:
+      context: ./server/sse
+      dockerfile: Dockerfile
+    hostname: sse_service
+    container_name: sse_service
+    restart: always
+    volumes:
+      - ./server/sse:/app
+      - /app/node_modules
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - KAFKA_BROKERS=kafka1:9092,kafka2:9093,kafka3:9094
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
 
 volumes:
   mysql1_data:

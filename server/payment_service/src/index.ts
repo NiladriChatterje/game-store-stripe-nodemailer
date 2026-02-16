@@ -138,10 +138,11 @@ if (cluster.isPrimary) {
                 await producer.connect();
                 await producer.send(
                     {
-                        topic: 'admin-update-topic',
+                        topic: 'admin-subscriptions-topic',
                         messages: [{ value: JSON.stringify({ _id, subscriptionPlan }) }]
                     }
                 );
+                console.log("<< Subscription added to kafka >>")
                 await producer.disconnect()
                 res.status(201).send('new subscription added.');
             } catch (err) {

@@ -1,7 +1,6 @@
 import { Kafka, Consumer, EachMessagePayload } from "kafkajs";
-import { sanityConfig } from "./utils";
-import { createClient } from "@sanity/client";
 import { AdminFieldsType } from "@declaration/AdminFieldType";
+import mysql from 'mysql2/promise';
 
 const kafka: Kafka = new Kafka({
   clientId: "xv-store",
@@ -9,7 +8,17 @@ const kafka: Kafka = new Kafka({
 });
 
 async function updateAdminRecord() {
-  const sanityClient = createClient(sanityConfig);
+  const pool = mysql.createPool({
+    host: 'global_sql_data',
+    port: 3306,
+    user: 'root',
+    password: '',
+    database: 'xvstore',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  });
+
   const consumer: Consumer = kafka.consumer({
     groupId: "update-admin-record",
     retry: { retries: 5 },
@@ -24,38 +33,47 @@ async function updateAdminRecord() {
     topic,
     message,
   }: EachMessagePayload) {
-    console.log(message.value.toString());
+    if (!message || !message.value) return;
 
     const {
       _id,
       gstin,
-      address: { pincode, county, country, state },
+      address,
       email,
       phone,
     }: AdminFieldsType = JSON.parse(message.value.toString());
 
     try {
-      sanityClient
-        ?.patch(_id)
-        .set({
-          gstin,
-          address: {
-            pincode,
-            county,
-            country,
-            state,
-          },
+      const adminId = `seller-${_id}`;
+
+      await pool.execute(
+        `UPDATE sellers SET
+          gstin = ?,
+          email = ?,
+          phone = ?,
+          address_pincode = ?,
+          address_county = ?,
+          address_state = ?,
+          address_country = ?
+          WHERE id = ?`,
+        [
+          gstin || null,
           email,
-          phone: Number(phone),
-        })
-        .commit()
-        .then((_) => {
-          heartbeat();
-        })
-        .catch((_err) => {
-          throw Promise.reject();
-        });
-    } catch (e) { }
+          phone ? Number(phone) : null,
+          address?.pincode,
+          address?.county,
+          address?.state,
+          address?.country,
+          adminId
+        ]
+      );
+
+      console.log(`<< Admin ${adminId} updated in MySQL >>`);
+      await heartbeat();
+    } catch (e) {
+      console.error("Error updating admin in MySQL:", e);
+      throw e; // Throw to trigger Kafka retry
+    }
   }
 
   consumer.run({ eachMessage: handleMessage });

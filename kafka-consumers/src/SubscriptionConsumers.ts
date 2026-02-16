@@ -29,7 +29,6 @@ async function init() {
     console.log('Redis client connected');
 
     const producer = kafka.producer();
-    await producer.connect();
 
     async function handleMessage({ message }: EachMessagePayload) {
         try {
@@ -104,11 +103,12 @@ async function init() {
 
             // 5. Notify via Kafka for SSE
             const notificationPayload = { sellerId: _id, status: 'success' };
-
+            await producer.connect();
             await producer.send({
                 topic: 'subscription-notifications',
                 messages: [{ value: JSON.stringify(notificationPayload) }]
             });
+            await producer.disconnect();
 
         } catch (error) {
             console.error('Error processing subscription message:', error);
@@ -118,7 +118,7 @@ async function init() {
     await consumer.connect();
     // Subscribing to admin-subscriptions-topic as per current structure, 
     // but the payment service also sends here.
-    await consumer.subscribe({ topic: 'admin-subscriptions-topic', fromBeginning: false });
+    await consumer.subscribe({ topic: 'admin-subscriptions-topic' });
 
     await consumer.run({
         eachMessage: handleMessage
