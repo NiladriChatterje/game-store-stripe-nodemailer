@@ -46,7 +46,7 @@ async function updateAdminRecord() {
     }: AdminFieldsType = payload;
 
     try {
-      const adminId = `seller-${_id}`;
+      const adminId = _id.startsWith('seller-') ? _id : `seller-${_id}`;
 
       await pool.execute(
         `UPDATE sellers SET

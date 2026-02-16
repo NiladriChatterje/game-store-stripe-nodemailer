@@ -102,7 +102,7 @@ async function createAdmin() {
 
       if (redisC.isOpen) {
         await redisC.hSet(`hashSet:admin:details`, onfulfilled._id, JSON.stringify(onfulfilled));
-        await redisC.sAdd(`set:admin:id`, onfulfilled.username);
+        await redisC.sAdd(`set:admin:id`, onfulfilled._id);
       }
 
     } catch (err) {

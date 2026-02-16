@@ -34,11 +34,16 @@ async function init() {
         try {
             const payload = JSON.parse(message.value.toString());
             console.log('RECV: [SubscriptionConsumers] message received on admin-subscriptions-topic');
-            const { _id, subscriptionPlan } = payload;
+            let { _id, subscriptionPlan } = payload;
 
             if (!_id || !subscriptionPlan) {
                 console.log('Skipping message: missing _id or subscriptionPlan');
                 return;
+            }
+
+            // Ensure _id is prefixed correctly
+            if (!_id.startsWith('seller-')) {
+                _id = `seller-${_id}`;
             }
 
             console.log('Processing subscription for seller:', _id);
