@@ -13,7 +13,8 @@ app.use(cors());
 app.use(express.json());
 
 // Event Emitter to bridge Kafka and SSE
-const notificationEmitter = new EventEmitter();
+const notificationEmitter1 = new EventEmitter();
+const notificationEmitter2 = new EventEmitter();
 
 // Kafka Setup
 const KAFKA_BROKERS = ["kafka1:9092", "kafka2:9093", "kafka3:9094"];
@@ -25,7 +26,7 @@ const kafka = new Kafka({
 
 const consumer = kafka.consumer({ groupId: `sse-group-${Math.random().toString(36).substring(7)}` });
 
-// SSE endpoint
+// SSE endpoint for dashboard events (subscriptions, etc.)
 app.get('/events', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Response) => {
     const sellerId = req.query.sellerId as string;
 
@@ -33,49 +34,64 @@ app.get('/events', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Respon
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    // Standard listener to bridge the emitter to this specific HTTP response
     const onNotification = (data: any) => {
-        // If sellerId is provided in query, only send relevant messages
-        if (sellerId && data.payload.sellerId !== sellerId) {
-            console.log(`<< SSE Seller ID mismatch - skipping message >>`);
-            return;
-        }
-
-        console.log(`<< SSE Sending notification to client for seller: ${sellerId || 'all'} >>`);
+        if (sellerId && data.payload.sellerId !== sellerId) return;
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
-    notificationEmitter.on('notification', onNotification);
-
-    // Keep connection alive initialization
+    notificationEmitter1.on('notification', onNotification);
     res.write('data: {"message": "connected"}\n\n');
 
     req.on('close', () => {
-        notificationEmitter.removeListener('notification', onNotification);
+        notificationEmitter1.removeListener('notification', onNotification);
+    });
+});
+
+// SSE endpoint for order real-time updates
+app.get('/orders', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Response) => {
+    const sellerId = req.query.sellerId as string;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const onOrderNotification = (data: any) => {
+        // Filter by sellerId if provided
+        if (sellerId && data.payload.sellerId !== sellerId) return;
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    notificationEmitter2.on('notification', onOrderNotification);
+    res.write('data: {"message": "connected"}\n\n');
+
+    req.on('close', () => {
+        notificationEmitter2.removeListener('notification', onOrderNotification);
     });
 });
 
 const initKafka = async () => {
     try {
-
         await consumer.connect();
-        await consumer.subscribe({ topic: 'subscription-notifications', fromBeginning: false });
+
+        // Subscribe to multiple topics
+        await consumer.subscribe({ topics: ['subscription-notifications', 'order-notifications', 'seller-order-notification-topic'], fromBeginning: false });
 
         await consumer.run({
             eachMessage: async ({ topic, message }) => {
-
                 if (message.value) {
                     try {
-                        const rawValue = message.value.toString();
+                        const payload = JSON.parse(message.value.toString());
+                        console.log(`[KAFKA] message received on topic: ${topic}`);
 
-                        const payload = JSON.parse(rawValue);
-                        console.log('[KAFKA] Parsed payload:', JSON.stringify(payload, null, 2));
-                        // Emit to the internal emitter
                         const eventData = { topic, payload };
-                        notificationEmitter.emit('notification', eventData);
+
+                        if (topic === 'subscription-notifications') {
+                            notificationEmitter1.emit('notification', eventData);
+                        } else if (topic === 'order-notifications' || topic === 'seller-order-notification-topic') {
+                            notificationEmitter2.emit('notification', eventData);
+                        }
                     } catch (e) {
                         console.error('[KAFKA] Error parsing Kafka message:', e);
-                        console.error('[KAFKA] Raw value that failed:', message.value.toString());
                     }
                 }
             },
