@@ -205,19 +205,20 @@ if (cluster.isPrimary) {
           if (result) {
             console.log("<Redis admin hit>")
             const adminData = JSON.parse(result);
+            let isPlanActive = false;
 
             if (subscriptionPlan) {
               const planExpireDate = JSON.parse(subscriptionPlan).planExpireDate;
               const currentTime = new Date().getTime();
               const expireTime = new Date(planExpireDate).getTime();
               if (expireTime > currentTime) {
-                res.json({ ...adminData, isPlanActive: true });
+                isPlanActive = true;
               } else {
-                await redisClient.hdel("admin:subscription:details", req.params._id);
-                res.json({ ...adminData, isPlanActive: false });
+                await redisClient.hDel("admin:subscription:details", req.params._id);
               }
             }
-            res.json({ ...adminData, isPlanActive: false });
+
+            res.json({ ...adminData, isPlanActive });
             return;
           }
         }
@@ -380,8 +381,8 @@ if (cluster.isPrimary) {
           }
         }
 
-        // 1. Get Seller State from Global DB to determine shard
-        let sellerState: string | null = null;
+        // 1. Get Seller Pincode from Global DB to determine shard
+        let sellerPincode: string | null = null;
         let shardHost = '';
 
         // Check Redis for cached seller state/details
@@ -390,14 +391,14 @@ if (cluster.isPrimary) {
           if (cachedAdmin) {
             try {
               const adminData = JSON.parse(cachedAdmin);
-              sellerState = adminData.address?.state;
+              sellerPincode = adminData.address?.pincode;
             } catch (e) {
               console.warn("DASHBOARD: Failed to parse cached admin data", e);
             }
           }
         }
 
-        if (!sellerState) {
+        if (!sellerPincode) {
           const globalConnection = await mysql.createConnection({
             host: 'global_sql_data',
             port: 3306,
@@ -406,17 +407,17 @@ if (cluster.isPrimary) {
           });
 
           const [rows]: any = await globalConnection.execute(
-            'SELECT address_state FROM sellers WHERE id = ?',
+            'SELECT address_pincode FROM sellers WHERE id = ?',
             [adminId]
           );
           await globalConnection.end();
 
           if (Array.isArray(rows) && rows.length > 0) {
-            sellerState = rows[0].address_state;
+            sellerPincode = rows[0].address_pincode;
           }
         }
 
-        const shardKey = sellerState || adminId;
+        const shardKey = sellerPincode || adminId;
         shardHost = ShardHelper.getShardHost(shardKey);
 
         // 2. Connect to the Seller's Shard
@@ -654,7 +655,7 @@ if (cluster.isPrimary) {
         let shardHost = 'mysql1'; // default fallback
 
         // 1. Determine Shard Host based on Seller Address
-        let sellerState: string | undefined;
+        let sellerPincode: string | undefined;
 
         // Try Redis first
         if (redisClient.isOpen) {
@@ -662,8 +663,8 @@ if (cluster.isPrimary) {
           if (cachedAdmin) {
             try {
               const adminData = JSON.parse(cachedAdmin);
-              sellerState = adminData.address?.state;
-              console.log("Found seller address in Redis:", sellerState);
+              sellerPincode = adminData.address?.pincode;
+              console.log("Found seller pincode in Redis:", sellerPincode);
             } catch (e) {
               console.warn("Failed to parse cached admin data", e);
             }
@@ -671,7 +672,7 @@ if (cluster.isPrimary) {
         }
 
         // If not in Redis (or no state), fetch from Global DB
-        if (!sellerState) {
+        if (!sellerPincode) {
           console.log("Seller address not in cache, fetching from Global DB...");
           const globalConnection = await mysql.createConnection({
             host: 'global_sql_data',
@@ -681,22 +682,22 @@ if (cluster.isPrimary) {
           });
 
           const [rows]: any = await globalConnection.execute(
-            'SELECT address_state FROM sellers WHERE id = ?',
+            'SELECT address_pincode FROM sellers WHERE id = ?',
             [sellerId]
           );
           await globalConnection.end();
 
           if (Array.isArray(rows) && rows.length > 0) {
-            sellerState = rows[0].address_state;
-            console.log("Fetched seller state from Global DB:", sellerState);
+            sellerPincode = rows[0].address_pincode;
+            console.log("Fetched seller pincode from Global DB:", sellerPincode);
           }
         }
 
         // Calculate Shard
-        // Priority: State -> ID (fallback)
-        const shardKey = sellerState || sellerId;
+        // Priority: Pincode -> ID (fallback)
+        const shardKey = sellerPincode || sellerId;
         shardHost = ShardHelper.getShardHost(shardKey);
-        console.log(`Routing to shard: ${shardHost} (based on: ${sellerState ? 'State' : 'ID'})`);
+        console.log(`Routing to shard: ${shardHost} (based on: ${sellerPincode ? 'Pincode' : 'ID'})`);
 
         // 2. Connect to the correct Shard
         const connection = await mysql.createConnection({
