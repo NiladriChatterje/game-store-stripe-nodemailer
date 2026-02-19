@@ -115,9 +115,17 @@ async function main() {
         // Create new record in shard
         const detailId = uuidv4();
         await mysqlPool.execute(`
-            INSERT INTO seller_product_details (id, seller_id, product_id, pincode, quantity)
-            VALUES (?, ?, ?, ?, ?)
-         `, [detailId, productPayload.seller, productId, productPayload.pincode, productPayload.quantity]);
+            INSERT INTO seller_product_details (id, seller_id, product_id, pincode, quantity, geo_lat, geo_lng)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+         `, [
+          detailId,
+          productPayload.seller,
+          productId,
+          productPayload.pincode,
+          productPayload.quantity,
+          productPayload.geoPoint?.lat || null,
+          productPayload.geoPoint?.lng || null
+        ]);
       } else {
         // Update existing record in shard
         const currentInventory = (inventoryCheck as any[])[0];
@@ -125,8 +133,13 @@ async function main() {
         newQuantity = currentInventory.quantity + productPayload.quantity;
 
         await mysqlPool.execute(`
-            UPDATE seller_product_details SET quantity = ? WHERE id = ?
-         `, [newQuantity, detailId]);
+            UPDATE seller_product_details SET quantity = ?, geo_lat = ?, geo_lng = ? WHERE id = ?
+         `, [
+          newQuantity,
+          productPayload.geoPoint?.lat || null,
+          productPayload.geoPoint?.lng || null,
+          detailId
+        ]);
       }
 
       // Redis Updates (Cache remains centralized or based on your cluster config)

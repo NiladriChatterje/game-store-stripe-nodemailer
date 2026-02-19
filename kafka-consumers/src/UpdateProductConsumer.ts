@@ -1,8 +1,6 @@
-import { EachMessagePayload, Kafka, logLevel } from "kafkajs";
-import { createClient, SanityClient } from "@sanity/client";
+import { EachMessagePayload, Kafka } from "kafkajs";
 import { createClient as RedisClient } from "redis";
 import type { ProductType } from "../declaration/productType.d.ts";
-import { sanityConfig } from "@utils";
 import { uuidv7 as uuid } from 'uuidv7'
 import mysql from 'mysql2/promise';
 import { ShardRouter, PRODUCT_SHARDS_CONFIG } from './utils/ShardRouter';
@@ -19,16 +17,12 @@ const kafka: Kafka = new Kafka({
     brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 
-
 async function main() {
     const redisClient = RedisClient({
         url: "redis://redis_storage:6379"
     });
     await redisClient.connect();
-    const sanityClient: SanityClient = createClient({
-        ...sanityConfig,
-        perspective: "published",
-    });
+
     const consumer = kafka.consumer({
         groupId: "product-db-update",
     });
@@ -51,11 +45,13 @@ async function main() {
 
             if (!productPayload._id) return;
 
+            const productId = productPayload._id;
+
             // DETERMINE SHARD
-            const shardIndex = ShardRouter.getShardIndex(productPayload._id);
+            const shardIndex = ShardRouter.getShardIndex(productId);
             const mysqlPool = shardPools[shardIndex];
 
-            // Update MySQL record
+            // 1. Update Products Table in Shard
             await mysqlPool.execute(`
                 UPDATE products SET
                     product_name = ?,
@@ -78,112 +74,69 @@ async function main() {
                 JSON.stringify(productPayload.variations || []),
                 productPayload.productDescription,
                 productPayload.modelNumber || null,
-                productPayload._id
+                productId
             ]);
 
-            type QuantityObj = {
-                _id: string;
-                quantityObj?:
-                { quantity: number; _key: string; _type: string, pincode: string }
-            }
-            const getQtyOnPincode: QuantityObj = await sanityClient.fetch(`*[_type == 'product'
-                && _id match '${productPayload._id}'][0]{
-                _id,
-                "quantityObj": quantity[pincode match "${productPayload.pincode}"][0] 
-              }`);
-            //if record was found update the particular document in the array with extra quantity
-            if (getQtyOnPincode.quantityObj != null) {
+            // 2. Update Seller Product Details (Inventory) in Shard
+            const [inventoryCheck] = await mysqlPool.execute(
+                'SELECT id, quantity FROM seller_product_details WHERE product_id = ? AND seller_id = ? AND pincode = ?',
+                [productId, productPayload.seller, productPayload.pincode]
+            );
 
-                const result = await sanityClient
-                    .patch(productPayload._id)
-                    .set({
-                        productName: productPayload?.productName,
-                        imagesBase64: productPayload.imagesBase64,
-                        eanUpcIsbnGtinAsinType: productPayload.eanUpcIsbnGtinAsinType,
-                        eanUpcNumber: productPayload.eanUpcNumber,
-                        category: productPayload.category,
-                        modelNumber: productPayload.modelNumber,
-                        productDescription: productPayload.productDescription,
-                        price: {
-                            pdtPrice: productPayload.price.pdtPrice,
-                            discountPercentage: productPayload.price.discountPercentage,
-                            currency: productPayload?.price.currency
-                        },
-                        keywords: productPayload.keywords,
-                        variations: productPayload.variations
-                    })
-                    .insert("replace",
-                        "quantity", [{
-                            pincode: productPayload.pincode,
-                            quantity: productPayload.quantity + getQtyOnPincode?.quantityObj.quantity,
-                            _key: uuid()
-                        }]
-                    )
-                    .commit();
-                console.log(`result after updating quantity of a pincode:`, result);
-            }
-            else {
-                await sanityClient
-                    .patch(productPayload._id)
-                    .set({
-                        productName: productPayload?.productName,
-                        imagesBase64: productPayload.imagesBase64,
-                        eanUpcIsbnGtinAsinType: productPayload.eanUpcIsbnGtinAsinType,
-                        eanUpcNumber: productPayload.eanUpcNumber,
-                        category: productPayload.category,
-                        modelNumber: productPayload.modelNumber,
-                        productDescription: productPayload.productDescription,
-                        price: {
-                            pdtPrice: productPayload.price.pdtPrice,
-                            discountPercentage: productPayload.price.discountPercentage,
-                            currency: productPayload?.price.currency
-                        },
-                        keywords: productPayload.keywords,
-                        variations: productPayload.variations
-                    })
-                    .append(
-                        "quantity", [{
-                            pincode: productPayload.pincode, quantity: productPayload.quantity,
-                            _key: uuid()
-                        }]
-                    )
-                    .commit();
-            }
-            //update the product to redis
-            let clearinterval: string | number | NodeJS.Timeout;
-            if (redisClient.isOpen) {
-                redisClient.hset("products:details",
-                    productPayload._id, JSON.stringify(productPayload))
+            let totalQuantity = productPayload.quantity;
+
+            if ((inventoryCheck as any[]).length === 0) {
+                // If not exists, insert new record
+                const detailId = uuid();
+                await mysqlPool.execute(`
+                    INSERT INTO seller_product_details (id, seller_id, product_id, pincode, quantity, geo_lat, geo_lng)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                `, [
+                    detailId,
+                    productPayload.seller || '',
+                    productId,
+                    productPayload.pincode,
+                    productPayload.quantity,
+                    productPayload.geoPoint?.lat || null,
+                    productPayload.geoPoint?.lng || null
+                ]);
             } else {
-                clearinterval = setInterval(() => {
-                    redisClient.hset("products:details",
-                        productPayload._id, JSON.stringify(productPayload))
-                    clearInterval(clearinterval)
-                }, 5000);
+                // If exists, increment quantity
+                const currentInventory = (inventoryCheck as any[])[0];
+                const detailId = currentInventory.id;
+                totalQuantity = currentInventory.quantity + productPayload.quantity;
+
+                await mysqlPool.execute(`
+                    UPDATE seller_product_details SET quantity = ?, geo_lat = ?, geo_lng = ? WHERE id = ?
+                `, [
+                    totalQuantity,
+                    productPayload.geoPoint?.lat || null,
+                    productPayload.geoPoint?.lng || null,
+                    detailId
+                ]);
             }
 
-            const seller_quantity = await sanityClient.fetch(`*[_type=='seller_product_details' 
-                    && product_id match "${productPayload._id}"
-                    && seller_id match "${productPayload.seller}"
-                    ][0]`);
+            // 3. Update Redis
+            if (redisClient.isOpen) {
+                const fullResult = {
+                    ...productPayload,
+                    _id: productId,
+                    quantity: totalQuantity
+                };
 
-            const success = await sanityClient.createOrReplace({
-                _id: seller_quantity._id,
-                _type: 'seller_product_details',
-                seller_id: productPayload.seller,
-                product_id: productPayload._id,
-                pincode: productPayload.pincode,
-                quantity: productPayload.quantity,
-                geoPoint: {
-                    lat: productPayload?.geoPoint.lat,
-                    lng: productPayload?.geoPoint.lng
-                }
-            })
+                await redisClient.hSet("products:details", productId, JSON.stringify(fullResult));
+                await redisClient.hSet(`products:${productPayload.category}:${productPayload.pincode}`, productId, JSON.stringify(fullResult));
+                await redisClient.hSet(`products:all:${productPayload.pincode}`, productId, JSON.stringify(fullResult));
+                console.log(`<< Redis updated for product ${productId} >>`);
+            }
 
+            await heartbeat();
             consumer.commitOffsets([
                 { topic, partition, offset: message.offset },
             ]);
-        } catch (error: Error | any) { }
+        } catch (error: Error | any) {
+            console.error("Error in UpdateProductConsumer:", error.message);
+        }
     }
 
     consumer.run({
@@ -194,4 +147,3 @@ async function main() {
 }
 
 main().catch(console.error);
-
