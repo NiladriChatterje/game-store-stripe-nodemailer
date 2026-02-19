@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS products (
     price_currency VARCHAR(3) DEFAULT 'INR',
     price_amount DECIMAL(10, 2),
     price_discount_percentage DECIMAL(5, 2) DEFAULT 0,
+    variations JSON DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

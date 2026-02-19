@@ -65,7 +65,7 @@ async function main() {
 
       // Check if product exists in this shard
       const [existingProducts] = await mysqlPool.execute(
-        'SELECT id FROM products WHERE ean_number = ? LIMIT 1',
+        'SELECT id FROM products WHERE ean_upc_number = ? LIMIT 1',
         [productPayload.eanUpcNumber]
       );
 
@@ -82,14 +82,21 @@ async function main() {
         // Insert new product into selected shard
         await mysqlPool.execute(`
           INSERT INTO products (
-            id, product_name, category, ean_number, price_amount
-          ) VALUES (?, ?, ?, ?, ?)
+            id, product_name, category, ean_upc_type, ean_upc_number, 
+            price_amount, price_discount_percentage, variations, 
+            product_description, model_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           productId,
           productPayload.productName,
           productPayload.category,
+          productPayload.eanUpcIsbnGtinAsinType,
           productPayload.eanUpcNumber,
-          productPayload.price.pdtPrice
+          productPayload.price.pdtPrice,
+          productPayload.price.discountPercentage,
+          JSON.stringify(productPayload.variations || []),
+          productPayload.productDescription,
+          productPayload.modelNumber || null
         ]);
         isNewProduct = true;
       }

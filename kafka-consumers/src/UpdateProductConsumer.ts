@@ -4,6 +4,15 @@ import { createClient as RedisClient } from "redis";
 import type { ProductType } from "../declaration/productType.d.ts";
 import { sanityConfig } from "@utils";
 import { uuidv7 as uuid } from 'uuidv7'
+import mysql from 'mysql2/promise';
+import { ShardRouter, PRODUCT_SHARDS_CONFIG } from './utils/ShardRouter';
+
+const shardPools = PRODUCT_SHARDS_CONFIG.map(config => mysql.createPool({
+    ...config,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+}));
 
 const kafka: Kafka = new Kafka({
     clientId: "xvstore",
@@ -40,6 +49,38 @@ async function main() {
                 message.value.toString()
             );
 
+            if (!productPayload._id) return;
+
+            // DETERMINE SHARD
+            const shardIndex = ShardRouter.getShardIndex(productPayload._id);
+            const mysqlPool = shardPools[shardIndex];
+
+            // Update MySQL record
+            await mysqlPool.execute(`
+                UPDATE products SET
+                    product_name = ?,
+                    category = ?,
+                    ean_upc_type = ?,
+                    ean_upc_number = ?,
+                    price_amount = ?,
+                    price_discount_percentage = ?,
+                    variations = ?,
+                    product_description = ?,
+                    model_number = ?
+                WHERE id = ?
+            `, [
+                productPayload.productName,
+                productPayload.category,
+                productPayload.eanUpcIsbnGtinAsinType,
+                productPayload.eanUpcNumber,
+                productPayload.price.pdtPrice,
+                productPayload.price.discountPercentage,
+                JSON.stringify(productPayload.variations || []),
+                productPayload.productDescription,
+                productPayload.modelNumber || null,
+                productPayload._id
+            ]);
+
             type QuantityObj = {
                 _id: string;
                 quantityObj?:
@@ -68,7 +109,8 @@ async function main() {
                             discountPercentage: productPayload.price.discountPercentage,
                             currency: productPayload?.price.currency
                         },
-                        keywords: productPayload.keywords
+                        keywords: productPayload.keywords,
+                        variations: productPayload.variations
                     })
                     .insert("replace",
                         "quantity", [{
@@ -96,7 +138,8 @@ async function main() {
                             discountPercentage: productPayload.price.discountPercentage,
                             currency: productPayload?.price.currency
                         },
-                        keywords: productPayload.keywords
+                        keywords: productPayload.keywords,
+                        variations: productPayload.variations
                     })
                     .append(
                         "quantity", [{
