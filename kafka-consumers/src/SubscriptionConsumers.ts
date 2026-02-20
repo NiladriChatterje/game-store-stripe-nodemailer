@@ -71,8 +71,8 @@ async function init() {
             // 3. Insert into MySQL
             await pool.execute(
                 `INSERT INTO seller_subscriptions 
-                (id, seller_id, transaction_id, order_id, payment_signature, amount, plan_active_date, plan_expire_date) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                (id, seller_id, transaction_id, order_id, payment_signature, amount, store_allotment, plan_active_date, plan_expire_date) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     shortid(),
                     _id,
@@ -80,6 +80,7 @@ async function init() {
                     subscriptionPlan.orderId,
                     subscriptionPlan.paymentSignature,
                     subscriptionPlan.amount || 0,
+                    subscriptionPlan.storeAllotment || 1,
                     newPlanStartDate,
                     newPlanExpiryDate
                 ]
@@ -94,6 +95,7 @@ async function init() {
                 orderId: subscriptionPlan.orderId,
                 paymentSignature: subscriptionPlan.paymentSignature,
                 amount: subscriptionPlan.amount || 0,
+                storeAllotment: subscriptionPlan.storeAllotment || 1,
                 planActiveDate: newPlanStartDate.toISOString(),
                 planExpireDate: newPlanExpiryDate.toISOString(),
                 lastUpdated: new Date().toISOString()

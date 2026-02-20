@@ -208,11 +208,26 @@ if (cluster.isPrimary) {
             let isPlanActive = false;
 
             if (subscriptionPlan) {
-              const planExpireDate = JSON.parse(subscriptionPlan).planExpireDate;
+              const planData = JSON.parse(subscriptionPlan);
+              const planExpireDate = planData.planExpireDate;
               const currentTime = new Date().getTime();
               const expireTime = new Date(planExpireDate).getTime();
               if (expireTime > currentTime) {
                 isPlanActive = true;
+
+                // Inject the subscription plan details into the response 
+                // because the hashSet might have been cached prior to subscription.
+                if (!adminData.subscriptionPlan || adminData.subscriptionPlan.length === 0) {
+                  adminData.subscriptionPlan = [{
+                    transactionId: planData.transactionId,
+                    amount: planData.amount,
+                    storeAllotment: planData.storeAllotment ?? 1,
+                    planSchemaList: {
+                      activeDate: planData.planActiveDate,
+                      expireDate: planData.planExpireDate
+                    }
+                  }];
+                }
               } else {
                 await redisClient.hDel("admin:subscription:details", req.params._id);
               }
@@ -262,11 +277,21 @@ if (cluster.isPrimary) {
               _key: sub.id,
               transactionId: sub.transaction_id,
               amount: sub.amount,
+              storeAllotment: sub.store_allotment ?? 1,
               planSchemaList: {
                 activeDate: sub.plan_active_date,
                 expireDate: sub.plan_expire_date
               }
             }));
+          }
+
+          // Fetch configured stores for this seller
+          const [storeRows] = await connection.execute(
+            'SELECT id, county, pincode, state, country FROM store WHERE seller_id = ?',
+            [req.params._id]
+          );
+          if (Array.isArray(storeRows)) {
+            result.stores = storeRows;
           }
         }
         await connection.end();
@@ -293,6 +318,72 @@ if (cluster.isPrimary) {
       }
     });
 
+
+  // Configure a new store for a seller
+  app.post(
+    "/configure-store",
+    verifyClerkToken,
+    async (req: Request, res: Response) => {
+      try {
+        const { sellerId, pincode, county, state, country, transaction_id } = req.body as {
+          sellerId: string;
+          pincode: string;
+          county: string;
+          transaction_id: string;
+          state: string;
+          country: string;
+        };
+        if (!sellerId || !pincode || !county || !state || !country) {
+          res.status(400).json({ error: "All store fields are required" });
+          return;
+        }
+
+        const connection = await mysql.createConnection({
+          host: 'global_sql_data',
+          port: 3306,
+          user: 'root',
+          database: 'xvstore'
+        });
+
+        // Check how many stores are allotted vs how many are configured
+        const [subRows]: any = await connection.execute(
+          'SELECT MAX(store_allotment) as max_allotment FROM seller_subscriptions WHERE seller_id = ?',
+          [sellerId]
+        );
+        const maxAllotment: number = subRows[0]?.max_allotment ?? 1;
+
+        const [existingRows]: any = await connection.execute(
+          'SELECT COUNT(*) as count FROM store WHERE seller_id = ?',
+          [sellerId]
+        );
+        const existingCount: number = existingRows[0]?.count ?? 0;
+
+        if (existingCount >= maxAllotment) {
+          await connection.end();
+          res.status(403).json({ error: `Store limit of ${maxAllotment} reached for your subscription plan.` });
+          return;
+        }
+
+        await connection.execute(
+          'INSERT INTO store (seller_id,transaction_id, pincode, county, state, country) VALUES (?, ?, ?, ?, ?, ?)',
+          [sellerId, transaction_id, pincode, county, state, country]
+        );
+
+
+
+        await connection.end();
+
+        // Invalidate Redis admin cache so next fetch includes updated stores
+        if (redisClient.isOpen) {
+          await redisClient.hDel("hashSet:admin:details", sellerId);
+        }
+
+        res.status(201).json({ message: "Store configured successfully", maxAllotment, existingCount: Math.min(maxAllotment, existingCount + 1) });
+      } catch (e: Error | any) {
+        res.status(500).json({ error: e.message });
+      }
+    }
+  );
 
   //update admin new data
   app.patch(
