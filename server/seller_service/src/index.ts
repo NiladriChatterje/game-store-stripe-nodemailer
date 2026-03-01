@@ -231,8 +231,42 @@ if (cluster.isPrimary) {
               } else {
                 await redisClient.hDel("admin:subscription:details", req.params._id);
               }
-            }
+            } else {
+              // The subscription is not present in redis (maybe cache cleared),
+              // but it might be in database and also active. We also include store check.
+              const connection = await mysql.createConnection({
+                host: 'global_sql_data',
+                port: 3306,
+                user: 'root',
+                database: 'xvstore'
+              });
 
+              // Fetch subscriptions
+              const [subRows] = await connection.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
+              if (Array.isArray(subRows) && subRows.length > 0) {
+                adminData.subscriptionPlan = subRows.map((sub: any) => ({
+                  _key: sub.id,
+                  transactionId: sub.transaction_id,
+                  amount: sub.amount,
+                  storeAllotment: sub.store_allotment ?? 1,
+                  planSchemaList: {
+                    activeDate: sub.plan_active_date,
+                    expireDate: sub.plan_expire_date
+                  }
+                }));
+                isPlanActive = checkSubscriptionValidity(adminData);
+              }
+
+              // Fetch configured stores for this seller
+              const [storeRows] = await connection.execute(
+                'SELECT id, county, pincode, state, country FROM store WHERE seller_id = ?',
+                [req.params._id]
+              );
+              if (Array.isArray(storeRows)) {
+                adminData.stores = storeRows;
+              }
+              await connection.end();
+            }
             res.json({ ...adminData, isPlanActive });
             return;
           }
@@ -325,11 +359,11 @@ if (cluster.isPrimary) {
     verifyClerkToken,
     async (req: Request, res: Response) => {
       try {
-        const { sellerId, pincode, county, state, country, transaction_id } = req.body as {
+        const { storeId, sellerId, pincode, county, state, country } = req.body as {
+          storeId: string;
           sellerId: string;
           pincode: string;
           county: string;
-          transaction_id: string;
           state: string;
           country: string;
         };
@@ -364,9 +398,20 @@ if (cluster.isPrimary) {
           return;
         }
 
+        const [pincodeCheck]: any = await connection.execute(
+          'SELECT COUNT(*) as count FROM store WHERE pincode = ?',
+          [pincode]
+        );
+
+        if (pincodeCheck[0]?.count > 0) {
+          await connection.end();
+          res.status(403).json({ error: `Store with pincode ${pincode} is already present in the store table.` });
+          return;
+        }
+
         await connection.execute(
-          'INSERT INTO store (seller_id,transaction_id, pincode, county, state, country) VALUES (?, ?, ?, ?, ?, ?)',
-          [sellerId, transaction_id, pincode, county, state, country]
+          'INSERT INTO store (id, seller_id, pincode, county, state, country) VALUES (?, ?, ?, ?, ?, ?)',
+          [Number(pincode), sellerId, pincode, county, state, country]
         );
 
 
@@ -378,7 +423,7 @@ if (cluster.isPrimary) {
           await redisClient.hDel("hashSet:admin:details", sellerId);
         }
 
-        res.status(201).json({ message: "Store configured successfully", maxAllotment, existingCount: Math.min(maxAllotment, existingCount + 1) });
+        res.status(201).json({ message: "Store configured successfully", storeId: Number(storeId), maxAllotment, existingCount: Math.min(maxAllotment, existingCount + 1) });
       } catch (e: Error | any) {
         res.status(500).json({ error: e.message });
       }

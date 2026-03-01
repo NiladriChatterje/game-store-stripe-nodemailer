@@ -16,9 +16,8 @@ CREATE TABLE IF NOT EXISTS sellers (
 );
 
 CREATE TABLE IF NOT EXISTS store(
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT PRIMARY KEY,
     seller_id VARCHAR(60) NOT NULL,
-    transaction_id VARCHAR(255) NOT NULL,
     pincode CHAR(6),
     county VARCHAR(100),
     state VARCHAR(100),
