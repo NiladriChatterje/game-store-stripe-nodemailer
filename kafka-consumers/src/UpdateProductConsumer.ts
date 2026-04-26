@@ -62,7 +62,8 @@ async function main() {
                     price_discount_percentage = ?,
                     variations = ?,
                     product_description = ?,
-                    model_number = ?
+                    model_number = ?,
+                    imagesBase64 = ?
                 WHERE id = ?
             `, [
                 productPayload.productName,
@@ -74,6 +75,7 @@ async function main() {
                 JSON.stringify(productPayload.variations || []),
                 productPayload.productDescription,
                 productPayload.modelNumber || null,
+                JSON.stringify(productPayload.imagesBase64 || []),
                 productId
             ]);
 

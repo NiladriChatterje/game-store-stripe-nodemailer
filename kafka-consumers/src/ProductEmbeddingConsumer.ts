@@ -5,8 +5,7 @@ import { ProductType } from "@declaration/productType";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { createClient as RedisClient } from "redis";
-import { createClient as SanityClient } from "@sanity/client";
-import { sanityConfig } from "./utils";
+import { uuidv4 } from "uuidv7"; // If needed, or just remove if unused
 
 
 const kafka: Kafka = new Kafka({
@@ -29,12 +28,17 @@ if (cluster.isPrimary) {
     maxConcurrency: availableParallelism()
   });
 
-  const sanityClient = SanityClient(sanityConfig);
 
   const redisClient = RedisClient({
     url: "redis://redis_storage:6379"
   });
   await redisClient.connect();
+
+  const redisVectorDB = RedisClient({
+    url: "redis://redis_vector_db:6379"
+  });
+  await redisVectorDB.connect();
+
   async function main() {
     const consumer = kafka.consumer({
       groupId: "product-embedding",
@@ -60,25 +64,28 @@ if (cluster.isPrimary) {
           chunkSize: 1024,
         });
 
+        const textToEmbed = productPayload.productDescription + '\n keywords: ' +
+          (productPayload.keywords ? productPayload.keywords.join(", ") : "");
 
-        splitter.splitText(productPayload.productDescription + '\n keywords: ' +
-          productPayload.keywords.map(item => item + ', '))
-          .then(async onfulfilled => {
-            const embeddings = await embeddingModel
-              .embedQuery(onfulfilled.join(" "));
+        splitter.splitText(textToEmbed)
+          .then(async chunks => {
+            const embeddings = await embeddingModel.embedQuery(chunks.join(" "));
 
-            sanityClient?.createOrReplace({
-              _id: productPayload._id,
-              _type: "productEmbeddings",
-              embeddings
-            })
-            // console.log(embeddings)
-            redisClient.hSet("product:embeddings", productPayload._id, JSON.stringify(embeddings))
+            // Store in Redis Vector DB as JSON for HNSW index
+            // The index is configured with prefix 'product:' and ON JSON
+            await redisVectorDB.json.set(`product:${productPayload._id}`, '$', {
+              product_id: productPayload._id,
+              embedding: embeddings
+            });
+
+            console.log(`Stored embedding for product: ${productPayload._id}`);
+
+            // Also keep in legacy hashset if needed by other services
+            await redisClient.hSet("product:embeddings", productPayload._id, JSON.stringify(embeddings));
           });
 
-
       } catch (error: Error | any) {
-
+        console.error("Error processing embedding:", error);
       }
     }
 

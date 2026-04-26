@@ -5,8 +5,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { availableParallelism } from "os";
 import type { ProductType } from "@declaration/index.d.ts";
-import { sanityConfig } from "@utils/index.js";
-import { createClient as SanityClient } from "@sanity/client";
 import { createClient as RedisClient, RedisClientType } from "redis";
 import { spawn } from "child_process";
 import { Kafka, RecordMetadata } from "kafkajs";
@@ -70,25 +68,22 @@ if (cluster.isPrimary) {
     });
   }
 } else {
-  const sanityClient = SanityClient(sanityConfig);
   const redisClient: RedisClientType = RedisClient({
     url: 'redis://redis_storage:6379'
   });
+
   //#region clerk_middleware
   const verifyClerkToken = async (req: Request<{}, {}, ProductType>, res: Response, next: NextFunction) => {
     try {
-      // Get token from Authorization header
       const token = req.headers.authorization?.split(' ')[1];
       if (!token) {
         res.status(401).json({ error: 'No token provided' });
         return;
       }
-      // Verify the token
       const payload = await verifyToken(token, {
         secretKey: process.env.CLERK_SECRET_KEY,
         clockSkewInMs: 60000
       });
-      // Add user info to request object
       req.auth = payload;
       next();
     } catch (error) {
@@ -97,7 +92,7 @@ if (cluster.isPrimary) {
       return;
     }
   };
-
+  //#endregion
 
   async function authMiddleware(req: Request<{}, {}, any>, res: Response, next: NextFunction) {
     const token = req.headers['x-admin-id'];
@@ -108,20 +103,23 @@ if (cluster.isPrimary) {
     let result;
     result = (await redisClient.sIsMember(`set:admin:id`, token as unknown as string));
     if (result) {
-      res.status(200).json(result);
       next();
       return;
     }
-    result = await sanityClient.fetch(`count(*[_type=='admin' && _id=='${token as unknown as string}'])`)
+    
+    // Check in MySQL global DB instead of Sanity
+    const [adminRows] = await globalPool.execute(
+      'SELECT id FROM sellers WHERE id = ?',
+      [token]
+    );
 
-    if (result && result > 0) {
-      await redisClient.sAdd(`set:admin:id`, token);
+    if (Array.isArray(adminRows) && adminRows.length > 0) {
+      await redisClient.sAdd(`set:admin:id`, token as string);
       next();
     }
     else
       res.status(403).send('Unauthorized token!');
   }
-  //#endregion
 
   async function main() {
     const app: Express = express();
@@ -133,85 +131,80 @@ if (cluster.isPrimary) {
     app.use(cors());
     app.use(express.json({ limit: "25mb" }));
     app.use(express.urlencoded({ extended: true, limit: "25mb" }));
-    app.use((req: Request, res: Response, next: NextFunction) => {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      next();
-    });
-
-
-
-    app.get("/", async (req: Request, res: Response) => {
-      res.end("pinged!");
-    });
-
-    //for all users [that's why no authentication middleware] <Completed> | Dont touch
+    
     app.get("/fetch-products/:pincode/:category/:page",
       async (req: Request<{ category: string; page: number, pincode: number }>, res: Response) => {
         res.setHeader('Content-Type', 'application/json');
+        const { pincode, category, page } = req.params;
+        const offset = (page - 1) * 10;
 
         if (redisClient.isOpen) {
-          switch (req.params.category) {
-            case 'all': {
-              let data: string[] = (await redisClient.hVals(`products:all:${req.params.pincode}`))
-                .slice((req.params.page - 1) * 10, (req.params.page) * 10);
-              if (data.length > 0) {
-                console.log(`<redis hit>`)
-                res.json(data.map(item => JSON.parse(item)));
-                return;
-              }
-              data = await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-            ...,
-            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`);
-              console.log(data)
-              for (let datum of data) {
-                const deserializedData = datum as unknown as ProductType;
-                redisClient.hSet(`products:all:${req.params.pincode}`, deserializedData._id, JSON.stringify(datum));
-              }
-
-              res.json(data);
+          const cacheKey = `products:${category}:${pincode}`;
+          const cachedData = await redisClient.hVals(cacheKey);
+          if (cachedData.length > 0) {
+            const paginated = cachedData.slice(offset, offset + 10).map(item => JSON.parse(item));
+            if (paginated.length > 0) {
+              res.json(paginated);
               return;
             }
-
-            default: {
-              let data: string[] = (await redisClient.hVals(`products:${req.params.category}:${req.params.pincode}`))
-                .slice((req.params.page - 1) * 10, (req.params.page) * 10);
-              if (data.length > 0) {
-                console.log(`<redis hit>`)
-                res.json(data.map(item => JSON.parse(item)));
-                return;
-              }
-              data = await sanityClient.fetch(`*[_type=="product" && category=="${req.params.category}"][${(req.params.page - 1) * 10}...${req.params.page * 10}]
-            {
-             ...,
-          'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`);
-              let deserializeDatum: ProductType;
-              for (let datum of data) {
-                deserializeDatum = datum as unknown as ProductType;
-                redisClient.hSet(`products:${req.params.category}:${req.params.pincode}`, deserializeDatum._id, JSON.stringify(datum));
-              }
-              res.json(data);
-              return;
-            }
-
           }
         }
-        switch (req.params.category) {
-          case 'all': res.json(await sanityClient.fetch(`*[_type=="product"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-             ...,
-            'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`));
-            break;
-          default: res.json(await sanityClient.fetch(`*[_type=="product" && category=="${req.params.category}"][${(req.params.page - 1) * 10}...${req.params.page * 10}]{
-             ...,
-           'quantity':quantity[pincode == '${req.params.pincode}'][0].quantity,
-            'seller':null
-            }`));
-            break;
+
+        // Aggregate from all shards
+        try {
+          const shardQueries = shardPools.map(pool => {
+            let sql = `
+              SELECT p.*, spd.quantity 
+              FROM products p
+              JOIN seller_product_details spd ON p.id = spd.product_id
+              WHERE spd.pincode = ?
+            `;
+            const params: any[] = [pincode];
+            if (category !== 'all') {
+              sql += ' AND p.category = ?';
+              params.push(category);
+            }
+            return pool.execute(sql, params);
+          });
+
+          const results = await Promise.all(shardQueries);
+          let allProducts: any[] = [];
+          results.forEach(([rows]) => {
+            if (Array.isArray(rows)) {
+              allProducts = allProducts.concat(rows);
+            }
+          });
+
+          // Sort and Paginate (Simplistic for now, should ideally be more sophisticated)
+          const paginatedProducts = allProducts.slice(offset, offset + 10).map(p => ({
+            _id: p.id,
+            productName: p.product_name,
+            category: p.category,
+            price: {
+              pdtPrice: p.price_amount,
+              discountPercentage: p.price_discount_percentage,
+              currency: 'INR'
+            },
+            quantity: p.quantity,
+            imagesBase64: p.imagesBase64 ? JSON.parse(p.imagesBase64) : [],
+            eanUpcNumber: p.ean_upc_number,
+            eanUpcIsbnGtinAsinType: p.ean_upc_type,
+            productDescription: p.product_description,
+            modelNumber: p.model_number
+          }));
+
+          // Cache results
+          if (redisClient.isOpen) {
+            const cacheKey = `products:${category}:${pincode}`;
+            for (const p of paginatedProducts) {
+              await redisClient.hSet(cacheKey, p._id, JSON.stringify(p));
+            }
+          }
+
+          res.json(paginatedProducts);
+        } catch (err) {
+          console.error("Error fetching products from shards:", err);
+          res.status(500).json({ error: "Failed to fetch products" });
         }
       });
 
@@ -259,9 +252,17 @@ if (cluster.isPrimary) {
                 _id: product.id,
                 productName: product.product_name,
                 category: product.category,
-                eanUpcNumber: product.ean_number,
-                price: product.price_amount,
-                quantity: quantity
+                eanUpcNumber: product.ean_upc_number,
+                eanUpcIsbnGtinAsinType: product.ean_upc_type,
+                price: {
+                  pdtPrice: product.price_amount,
+                  discountPercentage: product.price_discount_percentage,
+                  currency: 'INR'
+                },
+                quantity: quantity,
+                productDescription: product.product_description,
+                modelNumber: product.model_number,
+                imagesBase64: product.imagesBase64 ? JSON.parse(product.imagesBase64) : []
               };
 
               res.status(200).json(result);
@@ -273,63 +274,57 @@ if (cluster.isPrimary) {
               return;
             }
 
-            // Fallback to Sanity if not in MySQL yet
-            const result: ProductType = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]{
-              _id,
-              _rev,
-              productName,
-              productDescription,
-              modelNumber,
-              category,
-              imagesBase64,
-              eanUpcNumber,
-              price,
-              "quantity":quantity[pincode == "${pincode}"][0].quantity
-              }`);
-            res.status(200).json(result);
+            res.status(404).json({ error: "Product not found" });
             return;
-          }
-          catch (err) {
-            console.log(err)
-            res.status(502).json({ error: "Service down!" });
+          } catch (err) {
+            console.error("Fetch detail error:", err);
+            res.status(502).json({ error: "Service error!" });
             return;
           }
         }
       }
     );
 
-    //just fetch the quantity of the product in that location
-    app.get(
-      "/fetch-product-quantity/:pincode/:productId",
-      async (req: Request<{ productId: string; pincode: string }>, res: Response, next: NextFunction) => {
-        const productId: string | undefined = req.params.productId
-        const pincode = req.params.pincode
-        if (productId) {
-          try {
-            if (redisClient.isOpen) {
-              console.log("inside redis")
-              const fromRedisResult = (await redisClient.hGet('products:details', productId))
-              const deserialized = fromRedisResult != null && JSON.parse(fromRedisResult)
-
-              if (deserialized != null) {
-                for (let quant of deserialized.quantity)
-                  if (quant["pincode"] == pincode) {
-                    res.status(200).json(quant);
-                    return;
-                  }
+  //just fetch the quantity of the product in that location
+  app.get(
+    "/fetch-product-quantity/:pincode/:productId",
+    async (req: Request<{ productId: string; pincode: string }>, res: Response, next: NextFunction) => {
+      const { productId, pincode } = req.params;
+      if (productId) {
+        try {
+          if (redisClient.isOpen) {
+            const fromRedisResult = await redisClient.hGet('products:details', productId);
+            if (fromRedisResult) {
+              const product = JSON.parse(fromRedisResult);
+              // In our new schema, quantity might be directly in the cached object or need a separate lookup
+              if (product.quantity !== undefined) {
+                res.status(200).json({ quantity: product.quantity });
+                return;
               }
             }
-            const result: ProductType = await sanityClient.fetch(`*[_type=='product' && _id=='${productId}'][0]
-                                          {"quantity":quantity[pincode=="700135"][0]{quantity}}`);
-            res.status(200).send(result);
-            return;
           }
-          catch (err) {
-            res.status(502).json({ error: "Service down!" });
-            return;
+
+          // Fetch from MySQL shard
+          const shardIndex = ShardRouter.getShardIndex(productId);
+          const mysqlPool = shardPools[shardIndex];
+
+          const [rows]: any = await mysqlPool.execute(
+            'SELECT quantity FROM seller_product_details WHERE product_id = ? AND pincode = ?',
+            [productId, pincode]
+          );
+
+          if (Array.isArray(rows) && rows.length > 0) {
+            res.status(200).json({ quantity: rows[0].quantity });
+          } else {
+            res.status(200).json({ quantity: 0 });
           }
         }
-      })
+        catch (err) {
+          console.error("Fetch quantity error:", err);
+          res.status(502).json({ error: "Service error!" });
+        }
+      }
+    });
     //post to kafka topic [product-topic] to create the product
     app.post(
       "/add-product",

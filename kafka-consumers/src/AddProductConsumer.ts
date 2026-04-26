@@ -84,8 +84,8 @@ async function main() {
           INSERT INTO products (
             id, product_name, category, ean_upc_type, ean_upc_number, 
             price_amount, price_discount_percentage, variations, 
-            product_description, model_number
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            product_description, model_number, imagesBase64
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           productId,
           productPayload.productName,
@@ -96,7 +96,8 @@ async function main() {
           productPayload.price.discountPercentage,
           JSON.stringify(productPayload.variations || []),
           productPayload.productDescription,
-          productPayload.modelNumber || null
+          productPayload.modelNumber || null,
+          JSON.stringify(productPayload.imagesBase64 || [])
         ]);
         isNewProduct = true;
       }
