@@ -327,6 +327,19 @@ services:
       - kafka3
       - redis_storage
 
+  embedding_sync_job:
+    build:
+      context: ./server/embedding_sync_job
+      dockerfile: Dockerfile
+    container_name: embedding_sync_job
+    restart: on-failure
+    depends_on:
+      - mysql1
+      - mysql2
+      - mysql3
+      - mysql4
+      - redis_vector_db
+
 volumes:
   mysql1_data:
   mysql2_data:
