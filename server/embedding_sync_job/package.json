@@ -10,11 +10,14 @@
   "dependencies": {
     "@langchain/ollama": "^0.2.0",
     "mysql2": "^3.11.0",
+    "node-cron": "^4.2.1",
+    "pm2": "^6.0.14",
     "redis": "^5.0.1",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0"
+    "@types/node": "^25.6.0",
+    "@types/node-cron": "^3.0.11"
   }
 }

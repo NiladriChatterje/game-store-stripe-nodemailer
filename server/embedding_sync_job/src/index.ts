@@ -2,6 +2,7 @@ import { createClient as RedisClient } from "redis";
 import mysql from "mysql2/promise";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { availableParallelism } from "os";
+import cron from "node-cron";
 
 const SHARD_CONFIGS = [
     { host: 'mysql1', port: 3306, user: 'root', password: '', database: 'xvstore' },
@@ -58,7 +59,7 @@ async function syncEmbeddings() {
 
     for (const config of SHARD_CONFIGS) {
         const connection = await getMysqlConnection(config);
-        
+
         try {
             const [rows]: any = await connection.execute(
                 'SELECT id, product_name, category, product_description FROM products'
@@ -72,20 +73,22 @@ async function syncEmbeddings() {
 
                 // Check if product exists in redis_vector_db
                 const exists = await redisVectorDB.exists(redisKey);
-                
+
                 if (!exists) {
                     console.log(`Embedding not found for product ${productId}. Generating...`);
-                    
-                    const textToEmbed = `${row.product_name} ${row.category} ${row.product_description}`;
-                    
+
+                    const textToEmbed = `name: ${row.product_name}
+                     category: ${row.category} 
+                     description: ${row.product_description}`;
+
                     try {
                         const embedding = await embeddingModel.embedQuery(textToEmbed);
-                        
+
                         await redisVectorDB.json.set(redisKey, '$', {
                             product_id: productId,
                             embedding: embedding
                         });
-                        
+
                         console.log(`Successfully generated and stored embedding for product ${productId}`);
                     } catch (embedError: any) {
                         console.error(`Failed to generate embedding for ${productId}:`, embedError.message);
@@ -101,8 +104,14 @@ async function syncEmbeddings() {
         }
     }
 
-    console.log("Embedding Sync Job completed successfully.");
-    process.exit(0);
+    console.log("Embedding Sync iteration completed.");
 }
 
-syncEmbeddings().catch(console.error);
+// Run immediately on startup
+syncEmbeddings().then(() => {
+    // Schedule to run every 30 minutes
+    cron.schedule('*/30 * * * *', () => {
+        syncEmbeddings().catch(console.error);
+    });
+    console.log("Cron job scheduled to run every 30 minutes.");
+}).catch(console.error);
