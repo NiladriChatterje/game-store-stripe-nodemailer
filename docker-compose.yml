@@ -84,6 +84,7 @@ services:
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: "xvstore"
     ports:
       - "3306:3306"
     volumes:
@@ -96,6 +97,7 @@ services:
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: "xvstore"
     ports:
       - "3307:3306"
     volumes:
@@ -108,6 +110,7 @@ services:
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: "xvstore"
     ports:
       - "3308:3306"
     volumes:
@@ -120,6 +123,7 @@ services:
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: "xvstore"
     ports:
       - "3309:3306"
     volumes:
@@ -132,6 +136,7 @@ services:
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: "xvstore"
     ports:
       - "3310:3306"
     volumes:
@@ -144,6 +149,7 @@ services:
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: "xvstore"
     ports:
       - "3311:3306"
     volumes:
