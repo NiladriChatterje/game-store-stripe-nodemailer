@@ -275,6 +275,7 @@ services:
       - kafka2
       - kafka3
       - redis_storage
+      - redis_vector_db
 
   shipper_service:
     build:
