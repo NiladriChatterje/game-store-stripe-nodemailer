@@ -1,12 +1,9 @@
 import cluster from "node:cluster";
-import { EachMessagePayload, Kafka, logLevel } from "kafkajs";
+import { EachMessagePayload, Kafka } from "kafkajs";
 import { availableParallelism } from "node:os";
 import { ProductType } from "@declaration/productType";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { createClient as RedisClient } from "redis";
-import { uuidv4 } from "uuidv7"; // If needed, or just remove if unused
-
 
 const kafka: Kafka = new Kafka({
   clientId: "xvstore",
@@ -14,29 +11,26 @@ const kafka: Kafka = new Kafka({
 });
 
 if (cluster.isPrimary) {
-  let i = 0;
-  while (i < availableParallelism()) {
+  const numCPUs = availableParallelism();
+  for (let i = 0; i < numCPUs; i++) {
     cluster.fork();
-    cluster.on("exit", () => {
-      cluster.fork();
-    });
   }
+  cluster.on("exit", (worker) => {
+    console.log(`Worker ${worker.process.pid} died. Forking a new one...`);
+    cluster.fork();
+  });
 } else {
   const embeddingModel = new OllamaEmbeddings({
-    model: 'nomic-embed',
-    baseUrl: 'http://localhost:11434',
+    model: 'nomic-embed-text',
+    baseUrl: process.env.OLLAMA_URL || 'http://host.docker.internal:11434',
     maxConcurrency: availableParallelism()
   });
-
-
-  const redisClient = RedisClient({
-    url: "redis://redis_storage:6379"
-  });
-  await redisClient.connect();
 
   const redisVectorDB = RedisClient({
     url: "redis://redis_vector_db:6379"
   });
+  
+  redisVectorDB.on('error', err => console.error('Redis VectorDB Error:', err));
   await redisVectorDB.connect();
 
   async function main() {
@@ -53,43 +47,51 @@ if (cluster.isPrimary) {
       partition,
       topic,
     }: EachMessagePayload) {
+      if (!message.value) return;
+
       console.log("<arrayBufferLike> : ", message.value);
-      //embedding creation
 
       try {
         const productPayload: ProductType = JSON.parse(message.value.toString());
         console.log(`product payload :`, productPayload);
 
-        const splitter = new RecursiveCharacterTextSplitter({
-          chunkSize: 1024,
+        const productId = productPayload._id;
+        if (!productId) {
+          console.warn("Product payload is missing _id, skipping embedding generation.");
+          return;
+        }
+
+        // Build a rich text representation of the product to create a high-quality embedding.
+        // Product name and category are essential for matching queries.
+        const textToEmbed = `name: ${productPayload.productName || ""}
+category: ${productPayload.category || ""}
+description: ${productPayload.productDescription || ""}
+keywords: ${productPayload.keywords ? productPayload.keywords.join(", ") : ""}`;
+
+        // Keep Kafka connection alive during embedding computation
+        await heartbeat();
+
+        const embeddings = await embeddingModel.embedQuery(textToEmbed);
+
+        // Store the embedding in redis_vector_db under JSON for HNSW vector search
+        await redisVectorDB.json.set(`product:${productId}`, '$', {
+          product_id: productId,
+          embedding: embeddings
         });
 
-        const textToEmbed = productPayload.productDescription + '\n keywords: ' +
-          (productPayload.keywords ? productPayload.keywords.join(", ") : "");
+        console.log(`Stored embedding for product: ${productId}`);
 
-        splitter.splitText(textToEmbed)
-          .then(async chunks => {
-            const embeddings = await embeddingModel.embedQuery(chunks.join(" "));
-
-            // Store in Redis Vector DB as JSON for HNSW index
-            // The index is configured with prefix 'product:' and ON JSON
-            await redisVectorDB.json.set(`product:${productPayload._id}`, '$', {
-              product_id: productPayload._id,
-              embedding: embeddings
-            });
-
-            console.log(`Stored embedding for product: ${productPayload._id}`);
-
-            // Also keep in legacy hashset if needed by other services
-            await redisClient.hSet("product:embeddings", productPayload._id, JSON.stringify(embeddings));
-          });
+        // Manually commit offsets since autoCommit is false
+        await consumer.commitOffsets([
+          { topic, partition, offset: message.offset },
+        ]);
 
       } catch (error: Error | any) {
         console.error("Error processing embedding:", error);
       }
     }
 
-    consumer.run({
+    await consumer.run({
       partitionsConsumedConcurrently: 5,
       eachMessage: handleEachMessages,
       autoCommit: false,
@@ -98,3 +100,4 @@ if (cluster.isPrimary) {
 
   main().catch(console.error);
 }
+
