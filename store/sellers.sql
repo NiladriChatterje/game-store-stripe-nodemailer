@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS sellers (
     gstin VARCHAR(15),
     phone BIGINT,
     email VARCHAR(255) NOT NULL,
+    status ENUM('active','suspended','closed') DEFAULT 'active',
+    UNIQUE KEY uq_seller_email (email),
     geo_lat DOUBLE,
     geo_lng DOUBLE,
     address_pincode CHAR(6),
@@ -12,7 +14,9 @@ CREATE TABLE IF NOT EXISTS sellers (
     address_country VARCHAR(255),
     address_state VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    status ENUM('active','suspended','closed') DEFAULT 'active',
+    UNIQUE KEY uq_seller_email (email)
 );
 
 CREATE TABLE IF NOT EXISTS store(

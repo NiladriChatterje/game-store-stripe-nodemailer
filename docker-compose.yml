@@ -92,6 +92,7 @@ services:
       - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
+      - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
 
   mysql2:
     image: mysql:9.6.0
@@ -108,6 +109,7 @@ services:
       - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
+      - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
 
   mysql3:
     image: mysql:9.6.0
@@ -124,6 +126,7 @@ services:
       - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
+      - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
 
   mysql4:
     image: mysql:9.6.0
@@ -140,6 +143,7 @@ services:
       - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
+      - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
 
   mysql5:
     image: mysql:9.6.0
@@ -156,6 +160,7 @@ services:
       - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
+      - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
 
   global_sql_data:
     image: mysql:9.6.0
@@ -172,7 +177,6 @@ services:
       - ./store/users.sql:/docker-entrypoint-initdb.d/users.sql
       - ./store/sellers.sql:/docker-entrypoint-initdb.d/sellers.sql
       - ./store/shippers.sql:/docker-entrypoint-initdb.d/shippers.sql
-      - ./store/products.sql:/docker-entrypoint-initdb.d/products.sql
       - ./store/cart.sql:/docker-entrypoint-initdb.d/cart.sql
 
   redis_storage:
