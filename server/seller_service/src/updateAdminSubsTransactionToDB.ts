@@ -1,17 +1,14 @@
 import { parentPort, workerData } from "worker_threads";
 import { Kafka } from "kafkajs";
-import { SanityClient, createClient } from "@sanity/client";
 import dotenv from "dotenv";
-import { sanityConfig } from "@utils/index.js";
 dotenv.config();
 
-const sanityClient: SanityClient = createClient(sanityConfig);
 const kafka = new Kafka({
   clientId: "xv-store",
   brokers: [
-    process.env.BROKER_HOST_1 ?? "localhost:9095",
-    process.env.BROKER_HOST_2 ?? "localhost:9096",
-    process.env.BROKER_HOST_3 ?? "localhost:9097",
+    process.env.BROKER_HOST_1 ?? "kafka1:9092",
+    process.env.BROKER_HOST_2 ?? "kafka2:9093",
+    process.env.BROKER_HOST_3 ?? "kafka3:9094",
   ],
 });
 
