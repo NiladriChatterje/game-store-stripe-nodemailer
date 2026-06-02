@@ -13,6 +13,5 @@ CREATE TABLE IF NOT EXISTS user_cart_items (
     cart_id VARCHAR(255) NOT NULL,
     product_id VARCHAR(255) NOT NULL,
     quantity INT NOT NULL,
-    FOREIGN KEY (cart_id) REFERENCES user_carts(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    FOREIGN KEY (cart_id) REFERENCES user_carts(id) ON DELETE CASCADE
 );

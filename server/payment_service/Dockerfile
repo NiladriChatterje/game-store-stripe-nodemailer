@@ -20,8 +20,8 @@ RUN apk update \
 RUN npm ci --force
 # change User to payment
 EXPOSE 5000
-RUN npm run build
 
+# Use tsx to run TypeScript directly; no build step needed
 USER payment
 
 CMD [ "npm","run","start" ]

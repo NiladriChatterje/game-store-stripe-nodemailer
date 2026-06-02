@@ -46,7 +46,7 @@ if (cluster.isPrimary) {
   let old_child_process: any[] = []
   setInterval(() => {
     const child_process = spawn('ping', [
-      `http://localhost:${process.env.PORT}/`,
+      `http://product_service:${process.env.PORT}/`,
     ])
 
     while (old_child_process.length > 0) {
@@ -106,7 +106,7 @@ if (cluster.isPrimary) {
       next();
       return;
     }
-    
+
     // Check in MySQL global DB instead of Sanity
     const [adminRows] = await globalPool.execute(
       'SELECT id FROM sellers WHERE id = ?',
@@ -116,6 +116,7 @@ if (cluster.isPrimary) {
     if (Array.isArray(adminRows) && adminRows.length > 0) {
       await redisClient.sAdd(`set:admin:id`, token as string);
       next();
+      return;
     }
     else
       res.status(403).send('Unauthorized token!');
@@ -131,7 +132,7 @@ if (cluster.isPrimary) {
     app.use(cors());
     app.use(express.json({ limit: "25mb" }));
     app.use(express.urlencoded({ extended: true, limit: "25mb" }));
-    
+
     app.get("/fetch-products/:pincode/:category/:page",
       async (req: Request<{ category: string; page: number, pincode: number }>, res: Response) => {
         res.setHeader('Content-Type', 'application/json');
@@ -285,46 +286,46 @@ if (cluster.isPrimary) {
       }
     );
 
-  //just fetch the quantity of the product in that location
-  app.get(
-    "/fetch-product-quantity/:pincode/:productId",
-    async (req: Request<{ productId: string; pincode: string }>, res: Response, next: NextFunction) => {
-      const { productId, pincode } = req.params;
-      if (productId) {
-        try {
-          if (redisClient.isOpen) {
-            const fromRedisResult = await redisClient.hGet('products:details', productId);
-            if (fromRedisResult) {
-              const product = JSON.parse(fromRedisResult);
-              // In our new schema, quantity might be directly in the cached object or need a separate lookup
-              if (product.quantity !== undefined) {
-                res.status(200).json({ quantity: product.quantity });
-                return;
+    //just fetch the quantity of the product in that location
+    app.get(
+      "/fetch-product-quantity/:pincode/:productId",
+      async (req: Request<{ productId: string; pincode: string }>, res: Response, next: NextFunction) => {
+        const { productId, pincode } = req.params;
+        if (productId) {
+          try {
+            if (redisClient.isOpen) {
+              const fromRedisResult = await redisClient.hGet('products:details', productId);
+              if (fromRedisResult) {
+                const product = JSON.parse(fromRedisResult);
+                // In our new schema, quantity might be directly in the cached object or need a separate lookup
+                if (product.quantity !== undefined) {
+                  res.status(200).json({ quantity: product.quantity });
+                  return;
+                }
               }
             }
+
+            // Fetch from MySQL shard
+            const shardIndex = ShardRouter.getShardIndex(productId);
+            const mysqlPool = shardPools[shardIndex];
+
+            const [rows]: any = await mysqlPool.execute(
+              'SELECT quantity FROM seller_product_details WHERE product_id = ? AND pincode = ?',
+              [productId, pincode]
+            );
+
+            if (Array.isArray(rows) && rows.length > 0) {
+              res.status(200).json({ quantity: rows[0].quantity });
+            } else {
+              res.status(200).json({ quantity: 0 });
+            }
           }
-
-          // Fetch from MySQL shard
-          const shardIndex = ShardRouter.getShardIndex(productId);
-          const mysqlPool = shardPools[shardIndex];
-
-          const [rows]: any = await mysqlPool.execute(
-            'SELECT quantity FROM seller_product_details WHERE product_id = ? AND pincode = ?',
-            [productId, pincode]
-          );
-
-          if (Array.isArray(rows) && rows.length > 0) {
-            res.status(200).json({ quantity: rows[0].quantity });
-          } else {
-            res.status(200).json({ quantity: 0 });
+          catch (err) {
+            console.error("Fetch quantity error:", err);
+            res.status(502).json({ error: "Service error!" });
           }
         }
-        catch (err) {
-          console.error("Fetch quantity error:", err);
-          res.status(502).json({ error: "Service error!" });
-        }
-      }
-    });
+      });
     //post to kafka topic [product-topic] to create the product
     app.post(
       "/add-product",
@@ -339,8 +340,10 @@ if (cluster.isPrimary) {
             topic: "add-product-topic",
             messages: [{ value: JSON.stringify(req.body) }],
           });
+          res.status(201).json({ message: 'Product added successfully', metadata: recordMetaData });
         } catch (err) {
-          res.status(500).send({ err })
+          console.error('Error adding product:', err);
+          res.status(500).json({ error: 'Failed to add product' });
         }
         finally {
           await producer.disconnect();
@@ -356,19 +359,17 @@ if (cluster.isPrimary) {
         const producer = kafka.producer();
         try {
           await producer.connect();
-          producer.send({
+          const recordMetaData: RecordMetadata[] = await producer.send({
             topic: 'update-product-topic',
             messages: [{ value: JSON.stringify(req.body) }]
           });
-
+          res.status(200).json({ message: 'Product updated successfully', metadata: recordMetaData });
         } catch (err) {
-
+          console.error('Error updating product:', err);
+          res.status(500).json({ error: 'Failed to update product' });
         } finally {
           await producer.disconnect();
         }
-
-
-
       });
 
     app.listen(process.env.PORT ?? 5002, () =>

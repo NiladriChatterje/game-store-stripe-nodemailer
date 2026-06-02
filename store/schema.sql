@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS seller_subscriptions (
     order_id VARCHAR(255) NOT NULL,
     payment_signature VARCHAR(255) NOT NULL,
     amount DECIMAL(10, 2) NOT NULL,
+    store_allotment INT NOT NULL DEFAULT 1,
     plan_active_date DATETIME NOT NULL,
     plan_expire_date DATETIME NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

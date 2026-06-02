@@ -506,16 +506,8 @@ if (cluster.isPrimary) {
           ? `dashboardMetrics:admin:${adminId}:${fromDate}:${toDate}`
           : `dashboardMetrics:admin:${adminId}`;
 
-        // Check Redis cache first (skip cache for date-filtered requests for now)
-        if (redisClient.isOpen && !fromDate && !toDate) {
-          const cachedMetrics = await redisClient.hGet(`dashboardMetrics:admin:${adminId}`, 'metrics');
-          if (cachedMetrics) {
-            console.log("<Redis dashboard metrics hit>");
-            console.log(cachedMetrics);
-            res.status(200).json(JSON.parse(cachedMetrics));
-            return;
-          }
-        }
+        // NOTE: Previously, dashboard metrics were cached in Redis. To ensure the latest data is always returned,
+        // we have removed the cache lookup. The metrics will now be fetched directly from the database on every request.
 
         // 1. Get Seller Pincode from Global DB to determine shard
         let sellerPincode: string | null = null;
@@ -686,11 +678,7 @@ if (cluster.isPrimary) {
           }
         };
 
-        // Cache the result (only cache non-filtered requests)
-        if (redisClient.isOpen && !fromDate && !toDate) {
-          await redisClient.hSet(`dashboardMetrics:admin:${adminId}`, 'metrics', JSON.stringify(metrics));
-          await redisClient.expire(`dashboardMetrics:admin:${adminId}`, 3600);
-        }
+        // NOTE: Previously, the computed metrics were cached in Redis. This has been removed to avoid stale data.
 
         const response = {
           ...metrics,
