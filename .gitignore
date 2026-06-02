@@ -8,3 +8,5 @@ node_modules
 #dist ignore
 dist
 dist/*
+
+.claude

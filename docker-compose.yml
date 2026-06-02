@@ -22,7 +22,6 @@ services:
       - "29092:29092"
     environment:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:19092,LOCALHOST://localhost:9095,EXTERNAL://kafka1:9092,DOCKER://host.docker.internal:29092
-      # KAFKA_LISTENERS: INTERNAL://0.0.0.0:19092,LOCALHOST://0.0.0.0:9095,EXTERNAL://0.0.0.0:9092,DOCKER://0.0.0.0:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
@@ -44,7 +43,6 @@ services:
       - "29093:29093"
     environment:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:19093,LOCALHOST://localhost:9096,EXTERNAL://kafka2:9093,DOCKER://host.docker.internal:29093
-      # KAFKA_LISTENERS: INTERNAL://0.0.0.0:19093,LOCALHOST://0.0.0.0:9096,EXTERNAL://0.0.0.0:9093,DOCKER://0.0.0.0:29093
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
@@ -66,7 +64,6 @@ services:
       - "29094:29094"
     environment:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:19094,LOCALHOST://localhost:9097,EXTERNAL://kafka3:9094,DOCKER://host.docker.internal:29094
-      # KAFKA_LISTENERS: INTERNAL://0.0.0.0:19094,LOCALHOST://0.0.0.0:9097,EXTERNAL://0.0.0.0:9094,DOCKER://0.0.0.0:29094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,LOCALHOST:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
@@ -174,10 +171,10 @@ services:
       - "3311:3306"
     volumes:
       - global_sql_data:/var/lib/mysql
-      - ./store/users.sql:/docker-entrypoint-initdb.d/users.sql
-      - ./store/sellers.sql:/docker-entrypoint-initdb.d/sellers.sql
-      - ./store/shippers.sql:/docker-entrypoint-initdb.d/shippers.sql
-      - ./store/cart.sql:/docker-entrypoint-initdb.d/cart.sql
+      - ./store/users.sql:/docker-entrypoint-initdb.d/01_users.sql
+      - ./store/sellers.sql:/docker-entrypoint-initdb.d/02_sellers.sql
+      - ./store/shippers.sql:/docker-entrypoint-initdb.d/03_shippers.sql
+      - ./store/cart.sql:/docker-entrypoint-initdb.d/04_cart.sql
 
   redis_storage:
     image: redis
@@ -370,6 +367,26 @@ services:
       - mysql3
       - mysql4
       - redis_vector_db
+  # Dedicated PM2 service using the kafka-consumers image to run PM2-managed processes
+  pm2:
+    build:
+      context: ./kafka-consumers
+      dockerfile: Dockerfile
+    container_name: pm2
+    hostname: pm2
+    restart: always
+    working_dir: /app
+    volumes:
+      - ./kafka-consumers:/app
+      - /app/node_modules
+    # Use the npm start script which sets up the PATH for the local pm2 binary
+    command: [ "npm", "run", "start" ]
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - redis_storage
+      - global_sql_data
 
 volumes:
   mysql1_data:
