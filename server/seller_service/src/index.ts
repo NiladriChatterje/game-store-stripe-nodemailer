@@ -430,53 +430,45 @@ if (cluster.isPrimary) {
     }
   );
 
-//update admin new data
-   app.patch(
-     "/update-admin-info",
-     verifyClerkToken,
-     async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
-       if (redisClient.isOpen) {
-         if (await redisClient.sIsMember('set:admin:id', req.body._id)) {
-           next();
-           return;
-         }
-       }
-       //now watching if record is in sanity.io else catfishing
-       const record = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId][0]`, {
-         adminId: req.body._id
-       });
+  //update admin new data
+  app.patch(
+    "/update-admin-info",
+    verifyClerkToken,
+    async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
+      if (redisClient.isOpen) {
+        if (await redisClient.sIsMember('set:admin:id', req.body._id)) {
+          next();
+          return;
+        }
+      }
+      //now watching if record is in sanity.io else catfishing
+      const record = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId][0]`, {
+        adminId: req.body._id
+      });
 
-       if (record != null) {
-         if (redisClient.isOpen) {
-           await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
-           await redisClient.sAdd('set:admin:id', req.body._id)
-         }
-         next();
-         return;
-       }
+      if (record != null) {
+        if (redisClient.isOpen) {
+          await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
+          await redisClient.sAdd('set:admin:id', req.body._id)
+        }
+        next();
+        return;
+      }
 
-       res.sendStatus(401);
-     },
-     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
-       const adminPayload: AdminFieldsType = req.body;
-       const producer = kafka.producer();
-       try {
-         await producer.connect();
+      res.sendStatus(401);
+    },
+    async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
+      const adminPayload: AdminFieldsType = req.body;
+      const producer = kafka.producer();
+      await producer.connect();
 
-         producer.send({
-           topic: "admin-update-topic",
-           messages: [{ value: JSON.stringify(adminPayload) }],
-         });
-         res.status(200).json({ message: "Admin update queued" });
-       } catch (err) {
-         console.error("Error updating admin:", err);
-         res.status(500).json({ error: "Failed to update admin" });
-         return;
-       } finally {
-         await producer.disconnect();
-       }
-     }
-   );
+      producer.send({
+        topic: "admin-update-topic",
+        messages: [{ value: JSON.stringify(adminPayload) }],
+      });
+      await producer.disconnect();
+    }
+  );
 
   //get product list uploaded by an admin [redis + sanity]
   app.get(
@@ -500,25 +492,26 @@ if (cluster.isPrimary) {
     }
   );
 
-//get dashboard metrics for an admin [redis + sanity]
-   app.get(
-     "/:_id/dashboard-metrics",
-     verifyClerkToken,
-     async (req: Request<{ _id: string }>, res: Response) => {
-       try {
-const adminId = req.params._id;
-          const { fromDate, toDate } = req.query;
+  //get dashboard metrics for an admin [redis + sanity]
+  app.get(
+    "/:_id/dashboard-metrics",
+    verifyClerkToken,
+    async (req: Request<{ _id: string }>, res: Response) => {
+      try {
+        const adminId = req.params._id;
+        const { fromDate, toDate } = req.query;
 
-          // NOTE: Previously, dashboard metrics were cached in Redis. To ensure the latest data is always returned,
-          // we have removed the cache lookup. The metrics will now be fetched directly from the database on every request.
+        // Create cache key that includes date parameters if provided
+        const cacheKey = fromDate && toDate
+          ? `dashboardMetrics:admin:${adminId}:${fromDate}:${toDate}`
+          : `dashboardMetrics:admin:${adminId}`;
 
-          // 1. Get Seller Pincode from Global DB to determine shard
-          let sellerPincode: string | null = null;
-          let shardHost = '';
-          let timeSeriesLabels: string[] = [];
-          let timeSeriesSalesData: number[] = [];
-          let timeSeriesProfitData: number[] = [];
-          let timeSeriesOrdersData: number[] = [];
+        // NOTE: Previously, dashboard metrics were cached in Redis. To ensure the latest data is always returned,
+        // we have removed the cache lookup. The metrics will now be fetched directly from the database on every request.
+
+        // 1. Get Seller Pincode from Global DB to determine shard
+        let sellerPincode: string | null = null;
+        let shardHost = '';
 
         // Check Redis for cached seller state/details
         if (redisClient.isOpen) {
@@ -610,11 +603,9 @@ const adminId = req.params._id;
           AND YEAR(created_at) = YEAR(CURRENT_DATE())
         `, [adminId]);
 
-        // Time-series data for performance graph
+// Time-series data for performance graph
         const startDate = fromDate ? new Date(fromDate as string) : new Date(new Date().getFullYear(), 0, 1);
         const endDate = toDate ? new Date(toDate as string) : new Date();
-        const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24));
-        let stepDays = daysDiff > 365 ? 30 : daysDiff > 60 ? 7 : 1;
 
         const [timeSeriesRows]: any = await shardConnection.execute(`
           SELECT 
@@ -625,8 +616,15 @@ const adminId = req.params._id;
           WHERE seller_id = ? 
           AND created_at BETWEEN ? AND ?
           GROUP BY DATE(created_at)
-          ORDER BY created_at ASC
+          ORDER BY date ASC
         `, [adminId, startDate, endDate]);
+
+        const timeSeries = {
+          labels: timeSeriesRows.map((row: any) => row.date),
+          salesData: timeSeriesRows.map((row: any) => Number(row.totalSales || 0)),
+          profitData: timeSeriesRows.map((row: any) => Math.round(Number(row.totalSales || 0) * 0.4)),
+          ordersData: timeSeriesRows.map((row: any) => Number(row.ordersCount || 0))
+        };
 
         await shardConnection.end();
 
@@ -703,41 +701,7 @@ const adminId = req.params._id;
           }
         };
 
-        // Process time-series data
-        const dataMap = new Map<string, { sales: number; profit: number; orders: number }>();
-        timeSeriesRows.forEach((row: any) => {
-          const dateKey = row.date;
-          if (!dataMap.has(dateKey)) {
-            dataMap.set(dateKey, { sales: 0, profit: 0, orders: 0 });
-          }
-          dataMap.get(dateKey)!.sales = Number(row.totalSales || 0);
-          dataMap.get(dateKey)!.orders = Number(row.ordersCount || 0);
-          dataMap.get(dateKey)!.profit = Math.round(Number(row.totalSales || 0) * 0.4);
-        });
-
-        const currentDate = new Date(startDate);
-        while (currentDate <= endDate) {
-          if (stepDays >= 30) {
-            timeSeriesLabels.push(currentDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
-          } else {
-            timeSeriesLabels.push(currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-          }
-
-          const dateKey = currentDate.toISOString().split('T')[0];
-          const dayData = dataMap.get(dateKey) || { sales: 0, profit: 0, orders: 0 };
-          timeSeriesSalesData.push(dayData.sales);
-          timeSeriesProfitData.push(dayData.profit);
-          timeSeriesOrdersData.push(dayData.orders);
-
-          currentDate.setDate(currentDate.getDate() + stepDays);
-        }
-
-        const timeSeries = {
-          labels: timeSeriesLabels,
-          salesData: timeSeriesSalesData,
-          profitData: timeSeriesProfitData,
-          ordersData: timeSeriesOrdersData
-        };
+        // NOTE: Previously, the computed metrics were cached in Redis. This has been removed to avoid stale data.
 
         const response = {
           ...metrics,
