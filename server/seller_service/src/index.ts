@@ -501,22 +501,6 @@ if (cluster.isPrimary) {
         const adminId = req.params._id;
         const { fromDate, toDate } = req.query;
 
-        // Create cache key that includes date parameters if provided
-        const cacheKey = fromDate && toDate
-          ? `dashboardMetrics:admin:${adminId}:${fromDate}:${toDate}`
-          : `dashboardMetrics:admin:${adminId}`;
-
-        // Check Redis cache first (skip cache for date-filtered requests for now)
-        if (redisClient.isOpen && !fromDate && !toDate) {
-          const cachedMetrics = await redisClient.hGet(`dashboardMetrics:admin:${adminId}`, 'metrics');
-          if (cachedMetrics) {
-            console.log("<Redis dashboard metrics hit>");
-            console.log(cachedMetrics);
-            res.status(200).json(JSON.parse(cachedMetrics));
-            return;
-          }
-        }
-
         // 1. Get Seller Pincode from Global DB to determine shard
         let sellerPincode: string | null = null;
         let shardHost = '';
@@ -743,12 +727,6 @@ if (cluster.isPrimary) {
           profitData: timeSeriesProfitData,
           ordersData: timeSeriesOrdersData
         };
-
-        // Cache the result (only cache non-filtered requests)
-        if (redisClient.isOpen && !fromDate && !toDate) {
-          await redisClient.hSet(`dashboardMetrics:admin:${adminId}`, 'metrics', JSON.stringify(metrics));
-          await redisClient.expire(`dashboardMetrics:admin:${adminId}`, 3600);
-        }
 
         const response = {
           ...metrics,
