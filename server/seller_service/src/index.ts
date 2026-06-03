@@ -520,6 +520,10 @@ if (cluster.isPrimary) {
         // 1. Get Seller Pincode from Global DB to determine shard
         let sellerPincode: string | null = null;
         let shardHost = '';
+        let timeSeriesLabels: string[] = [];
+        let timeSeriesSalesData: number[] = [];
+        let timeSeriesProfitData: number[] = [];
+        let timeSeriesOrdersData: number[] = [];
 
         // Check Redis for cached seller state/details
         if (redisClient.isOpen) {
@@ -611,6 +615,24 @@ if (cluster.isPrimary) {
           AND YEAR(created_at) = YEAR(CURRENT_DATE())
         `, [adminId]);
 
+        // Time-series data for performance graph
+        const startDate = fromDate ? new Date(fromDate as string) : new Date(new Date().getFullYear(), 0, 1);
+        const endDate = toDate ? new Date(toDate as string) : new Date();
+        const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24));
+        let stepDays = daysDiff > 365 ? 30 : daysDiff > 60 ? 7 : 1;
+
+        const [timeSeriesRows]: any = await shardConnection.execute(`
+          SELECT 
+            DATE(created_at) as date,
+            SUM(total_amount) as totalSales,
+            COUNT(*) as ordersCount
+          FROM seller_orders
+          WHERE seller_id = ? 
+          AND created_at BETWEEN ? AND ?
+          GROUP BY DATE(created_at)
+          ORDER BY created_at ASC
+        `, [adminId, startDate, endDate]);
+
         await shardConnection.end();
 
         // 4. Aggregate Inventory across ALL shards (since products are sharded by productId)
@@ -686,6 +708,42 @@ if (cluster.isPrimary) {
           }
         };
 
+        // Process time-series data
+        const dataMap = new Map<string, { sales: number; profit: number; orders: number }>();
+        timeSeriesRows.forEach((row: any) => {
+          const dateKey = row.date;
+          if (!dataMap.has(dateKey)) {
+            dataMap.set(dateKey, { sales: 0, profit: 0, orders: 0 });
+          }
+          dataMap.get(dateKey)!.sales = Number(row.totalSales || 0);
+          dataMap.get(dateKey)!.orders = Number(row.ordersCount || 0);
+          dataMap.get(dateKey)!.profit = Math.round(Number(row.totalSales || 0) * 0.4);
+        });
+
+        const currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+          if (stepDays >= 30) {
+            timeSeriesLabels.push(currentDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+          } else {
+            timeSeriesLabels.push(currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+          }
+
+          const dateKey = currentDate.toISOString().split('T')[0];
+          const dayData = dataMap.get(dateKey) || { sales: 0, profit: 0, orders: 0 };
+          timeSeriesSalesData.push(dayData.sales);
+          timeSeriesProfitData.push(dayData.profit);
+          timeSeriesOrdersData.push(dayData.orders);
+
+          currentDate.setDate(currentDate.getDate() + stepDays);
+        }
+
+        const timeSeries = {
+          labels: timeSeriesLabels,
+          salesData: timeSeriesSalesData,
+          profitData: timeSeriesProfitData,
+          ordersData: timeSeriesOrdersData
+        };
+
         // Cache the result (only cache non-filtered requests)
         if (redisClient.isOpen && !fromDate && !toDate) {
           await redisClient.hSet(`dashboardMetrics:admin:${adminId}`, 'metrics', JSON.stringify(metrics));
@@ -694,6 +752,7 @@ if (cluster.isPrimary) {
 
         const response = {
           ...metrics,
+          timeSeries,
           ...(fromDate && toDate && {
             dateRange: {
               from: fromDate,
