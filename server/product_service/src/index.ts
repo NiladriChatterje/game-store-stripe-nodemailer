@@ -339,16 +339,18 @@ if (cluster.isPrimary) {
             topic: "add-product-topic",
             messages: [{ value: JSON.stringify(req.body) }],
           });
+          res.status(201).json({ message: "Product added successfully", metadata: recordMetaData });
         } catch (err) {
-          res.status(500).send({ err })
-        }
-        finally {
+          console.error("Error adding product:", err);
+          res.status(500).json({ error: "Failed to add product" });
+          return;
+        } finally {
           await producer.disconnect();
         }
       }
     );
 
-    //patch to update same product
+//patch to update same product
     app.patch("/update-product",
       verifyClerkToken,
       authMiddleware,
@@ -356,19 +358,18 @@ if (cluster.isPrimary) {
         const producer = kafka.producer();
         try {
           await producer.connect();
-          producer.send({
+          await producer.send({
             topic: 'update-product-topic',
             messages: [{ value: JSON.stringify(req.body) }]
           });
-
+          res.status(200).json({ message: "Product update queued" });
         } catch (err) {
-
+          console.error("Error updating product:", err);
+          res.status(500).json({ error: "Failed to update product" });
+          return;
         } finally {
           await producer.disconnect();
         }
-
-
-
       });
 
     app.listen(process.env.PORT ?? 5002, () =>

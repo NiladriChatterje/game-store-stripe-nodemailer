@@ -430,45 +430,53 @@ if (cluster.isPrimary) {
     }
   );
 
-  //update admin new data
-  app.patch(
-    "/update-admin-info",
-    verifyClerkToken,
-    async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
-      if (redisClient.isOpen) {
-        if (await redisClient.sIsMember('set:admin:id', req.body._id)) {
-          next();
-          return;
-        }
-      }
-      //now watching if record is in sanity.io else catfishing
-      const record = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId][0]`, {
-        adminId: req.body._id
-      });
+//update admin new data
+   app.patch(
+     "/update-admin-info",
+     verifyClerkToken,
+     async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
+       if (redisClient.isOpen) {
+         if (await redisClient.sIsMember('set:admin:id', req.body._id)) {
+           next();
+           return;
+         }
+       }
+       //now watching if record is in sanity.io else catfishing
+       const record = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId][0]`, {
+         adminId: req.body._id
+       });
 
-      if (record != null) {
-        if (redisClient.isOpen) {
-          await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
-          await redisClient.sAdd('set:admin:id', req.body._id)
-        }
-        next();
-        return;
-      }
+       if (record != null) {
+         if (redisClient.isOpen) {
+           await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
+           await redisClient.sAdd('set:admin:id', req.body._id)
+         }
+         next();
+         return;
+       }
 
-      res.sendStatus(401);
-    },
-    async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
-      const adminPayload: AdminFieldsType = req.body;
-      const producer = kafka.producer();
-      await producer.connect();
+       res.sendStatus(401);
+     },
+     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
+       const adminPayload: AdminFieldsType = req.body;
+       const producer = kafka.producer();
+       try {
+         await producer.connect();
 
-      producer.send({
-        topic: "admin-update-topic",
-        messages: [{ value: JSON.stringify(adminPayload) }],
-      });
-      await producer.disconnect();
-    }
-  );
+         producer.send({
+           topic: "admin-update-topic",
+           messages: [{ value: JSON.stringify(adminPayload) }],
+         });
+         res.status(200).json({ message: "Admin update queued" });
+       } catch (err) {
+         console.error("Error updating admin:", err);
+         res.status(500).json({ error: "Failed to update admin" });
+         return;
+       } finally {
+         await producer.disconnect();
+       }
+     }
+   );
 
   //get product list uploaded by an admin [redis + sanity]
   app.get(
