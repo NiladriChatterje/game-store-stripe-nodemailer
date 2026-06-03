@@ -51,9 +51,9 @@ async function main() {
     console.log("<arrayBufferLike> : ", message.value);
 
     try {
-      const productPayload: ProductType = JSON.parse(
+      const productPayload: ProductType = message.value ? JSON.parse(
         message.value.toString()
-      );
+      ) : null;
 
       const productId = productPayload._id || uuidv4();
 
