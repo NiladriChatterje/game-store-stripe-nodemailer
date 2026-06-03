@@ -4,6 +4,7 @@ export interface Subscription {
     paymentSignature: string;
     activePlan: number;
     amount?: number;
+    storeAllotment?: number;
     planSchemaList: planSchemaList; // Fixed: Changed from planSchemeList to planSchemaList to match Sanity schema
 }
 interface planSchemaList {

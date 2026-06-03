@@ -14,9 +14,7 @@ CREATE TABLE IF NOT EXISTS sellers (
     address_country VARCHAR(255),
     address_state VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    status ENUM('active','suspended','closed') DEFAULT 'active',
-    UNIQUE KEY uq_seller_email (email)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS store(

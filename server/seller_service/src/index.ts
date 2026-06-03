@@ -500,16 +500,24 @@ if (cluster.isPrimary) {
     }
   );
 
-  //get dashboard metrics for an admin [redis + sanity]
-  app.get(
-    "/:_id/dashboard-metrics",
-    verifyClerkToken,
-    async (req: Request<{ _id: string }>, res: Response) => {
-      try {
-        const adminId = req.params._id;
-        const { fromDate, toDate } = req.query;
+//get dashboard metrics for an admin [redis + sanity]
+   app.get(
+     "/:_id/dashboard-metrics",
+     verifyClerkToken,
+     async (req: Request<{ _id: string }>, res: Response) => {
+       try {
+         const adminId = req.params._id;
+         const { fromDate, toDate } = req.query;
 
-        // 1. Get Seller Pincode from Global DB to determine shard
+         // Create cache key that includes date parameters if provided
+         const cacheKey = fromDate && toDate
+           ? `dashboardMetrics:admin:${adminId}:${fromDate}:${toDate}`
+           : `dashboardMetrics:admin:${adminId}`;
+
+         // NOTE: Previously, dashboard metrics were cached in Redis. To ensure the latest data is always returned,
+         // we have removed the cache lookup. The metrics will now be fetched directly from the database on every request.
+
+         // 1. Get Seller Pincode from Global DB to determine shard
         let sellerPincode: string | null = null;
         let shardHost = '';
         let timeSeriesLabels: string[] = [];
@@ -698,7 +706,7 @@ if (cluster.isPrimary) {
             trend: '+0% from last month',
             numericValue: totalProductsInInventory
           }
-        };
+};
 
         // Process time-series data
         const dataMap = new Map<string, { sales: number; profit: number; orders: number }>();
@@ -728,6 +736,8 @@ if (cluster.isPrimary) {
 
           currentDate.setDate(currentDate.getDate() + stepDays);
         }
+
+        // NOTE: Previously, the computed metrics were cached in Redis. This has been removed to avoid stale data.
 
         const timeSeries = {
           labels: timeSeriesLabels,
