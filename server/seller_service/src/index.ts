@@ -257,13 +257,23 @@ if (cluster.isPrimary) {
                 isPlanActive = checkSubscriptionValidity(adminData);
               }
 
-              // Fetch configured stores for this seller
-              const [storeRows] = await connection.execute(
-                'SELECT id, county, pincode, state, country FROM store WHERE seller_id = ?',
-                [req.params._id]
-              );
-              if (Array.isArray(storeRows)) {
-                adminData.stores = storeRows;
+              // Fetch configured stores for this seller (try seller_stores, fall back to store)
+              try {
+                const [storeRows] = await connection.execute(
+                  'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+                  [req.params._id]
+                );
+                if (Array.isArray(storeRows)) {
+                  adminData.stores = storeRows;
+                }
+              } catch (e: any) {
+                const [storeRows] = await connection.execute(
+                  'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+                  [req.params._id]
+                );
+                if (Array.isArray(storeRows)) {
+                  adminData.stores = storeRows;
+                }
               }
               await connection.end();
             }
@@ -319,13 +329,23 @@ if (cluster.isPrimary) {
             }));
           }
 
-          // Fetch configured stores for this seller
-          const [storeRows] = await connection.execute(
-            'SELECT id, county, pincode, state, country FROM store WHERE seller_id = ?',
-            [req.params._id]
-          );
-          if (Array.isArray(storeRows)) {
-            result.stores = storeRows;
+          // Fetch configured stores for this seller (try seller_stores, fall back to store)
+          try {
+            const [storeRows] = await connection.execute(
+              'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+              [req.params._id]
+            );
+            if (Array.isArray(storeRows)) {
+              result.stores = storeRows;
+            }
+          } catch (e: any) {
+            const [storeRows] = await connection.execute(
+              'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+              [req.params._id]
+            );
+            if (Array.isArray(storeRows)) {
+              result.stores = storeRows;
+            }
           }
         }
         await connection.end();
@@ -414,7 +434,17 @@ if (cluster.isPrimary) {
           [Number(pincode), sellerId, pincode, county, state, country]
         );
 
-
+        // Also insert into seller_stores with pre-computed shard_host (best-effort)
+        try {
+          const shardHost = ShardHelper.getShardHost(pincode);
+          const nextStoreNumber = existingCount + 1;
+          await connection.execute(
+            'INSERT INTO seller_stores (seller_id, store_number, pincode, shard_host, county, state, country) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [sellerId, nextStoreNumber, pincode, shardHost, county, state, country]
+          );
+        } catch (e: any) {
+          console.log(`seller_stores insert skipped (table may not exist): ${e.message}`);
+        }
 
         await connection.end();
 
@@ -509,165 +539,153 @@ if (cluster.isPrimary) {
         // NOTE: Previously, dashboard metrics were cached in Redis. To ensure the latest data is always returned,
         // we have removed the cache lookup. The metrics will now be fetched directly from the database on every request.
 
-        // 1. Get Seller Pincode from Global DB to determine shard
-        let sellerPincode: string | null = null;
-        let shardHost = '';
+        // 1. Get all shards this seller has data in
+        const sellerShards = await ShardHelper.getSellerShards(adminId);
+        console.log(`DASHBOARD: Seller ${adminId} has data in shards: ${sellerShards.join(', ')}`);
 
-        // Check Redis for cached seller state/details
-        if (redisClient.isOpen) {
-          const cachedAdmin = await redisClient.hGet("hashSet:admin:details", adminId);
-          if (cachedAdmin) {
-            try {
-              const adminData = JSON.parse(cachedAdmin);
-              sellerPincode = adminData.address?.pincode;
-            } catch (e) {
-              console.warn("DASHBOARD: Failed to parse cached admin data", e);
-            }
-          }
-        }
+        // 2. Execute metrics queries across ALL seller shards in parallel
+        const dateFilter = (fromDate && toDate) ? { from: fromDate, to: toDate } : null;
 
-        if (!sellerPincode) {
-          const globalConnection = await mysql.createConnection({
-            host: 'global_sql_data',
-            port: 3306,
-            user: 'root',
-            database: 'xvstore'
-          });
-
-          const [rows]: any = await globalConnection.execute(
-            'SELECT address_pincode FROM sellers WHERE id = ?',
-            [adminId]
-          );
-          await globalConnection.end();
-
-          if (Array.isArray(rows) && rows.length > 0) {
-            sellerPincode = rows[0].address_pincode;
-          }
-        }
-
-        const shardKey = sellerPincode || adminId;
-        shardHost = ShardHelper.getShardHost(shardKey);
-
-        // 2. Connect to the Seller's Shard
-        const shardConnection = await mysql.createConnection({
-          host: shardHost,
-          port: 3306,
-          user: 'root',
-          database: 'xvstore'
-        });
-
-        // 3. Execute Metrics Queries on the Shard
-        // Base where clause for date filters
-        let dateFilter = '';
-        const queryParams: any[] = [adminId];
-        if (fromDate && toDate) {
-          dateFilter = ' AND created_at BETWEEN ? AND ?';
-          queryParams.push(fromDate, toDate);
-        }
-
-        // Total Sales & Products Sold
-        const [salesRows]: any = await shardConnection.execute(`
-          SELECT 
-            SUM(so.total_amount) as totalSales,
-            SUM(soi.quantity) as productsSold
-          FROM seller_orders so
-          LEFT JOIN (
-            SELECT seller_order_id, SUM(quantity) as quantity 
-            FROM seller_order_items 
-            GROUP BY seller_order_id
-          ) soi ON so.id = soi.seller_order_id
-          WHERE so.seller_id = ? ${dateFilter}
-        `, queryParams);
-
-        // Orders Served (Assuming 'ready_to_ship' or any non-pending/non-rejected counts as "served" in this context)
-        const [ordersServedRows]: any = await shardConnection.execute(`
-          SELECT COUNT(*) as count 
-          FROM seller_orders 
-          WHERE seller_id = ? AND status NOT IN ('pending', 'rejected') ${dateFilter}
-        `, queryParams);
-
-        // Active Customers (Unique customers who have ordered)
-        const [customerRows]: any = await shardConnection.execute(`
-          SELECT COUNT(DISTINCT o.customer_id) as count
-          FROM seller_orders so
-          JOIN orders o ON so.order_id = o.id
-          WHERE so.seller_id = ? ${dateFilter}
-        `, queryParams);
-
-        // Monthly Revenue (Current Month)
-        const [monthlyRevRows]: any = await shardConnection.execute(`
-          SELECT SUM(total_amount) as count
-          FROM seller_orders
-          WHERE seller_id = ? 
-          AND MONTH(created_at) = MONTH(CURRENT_DATE()) 
-          AND YEAR(created_at) = YEAR(CURRENT_DATE())
-        `, [adminId]);
-
-// Time-series data for performance graph
-        const startDate = fromDate ? new Date(fromDate as string) : new Date(new Date().getFullYear(), 0, 1);
-        const endDate = toDate ? new Date(toDate as string) : new Date();
-
-        const [timeSeriesRows]: any = await shardConnection.execute(`
-          SELECT 
-            DATE(created_at) as date,
-            SUM(total_amount) as totalSales,
-            COUNT(*) as ordersCount
-          FROM seller_orders
-          WHERE seller_id = ? 
-          AND created_at BETWEEN ? AND ?
-          GROUP BY DATE(created_at)
-          ORDER BY date ASC
-        `, [adminId, startDate, endDate]);
-
-        const timeSeries = {
-          labels: timeSeriesRows.map((row: any) => row.date),
-          salesData: timeSeriesRows.map((row: any) => Number(row.totalSales || 0)),
-          profitData: timeSeriesRows.map((row: any) => Math.round(Number(row.totalSales || 0) * 0.4)),
-          ordersData: timeSeriesRows.map((row: any) => Number(row.ordersCount || 0))
-        };
-
-        await shardConnection.end();
-
-        // 4. Aggregate Inventory across ALL shards (since products are sharded by productId)
-        let totalProductsInInventory = 0;
-        const shardHosts = ['mysql1', 'mysql2', 'mysql3', 'mysql4'];
-
-        const inventoryPromises = shardHosts.map(async (host) => {
+        const shardMetricPromises = sellerShards.map(async (shardHost) => {
           try {
             const conn = await mysql.createConnection({
-              host,
+              host: shardHost,
               port: 3306,
               user: 'root',
               database: 'xvstore'
             });
-            const [rows]: any = await conn.execute(
+
+            // Total Sales & Products Sold
+            const [salesRows]: any = await conn.execute(`
+              SELECT 
+                COALESCE(SUM(so.total_amount), 0) as totalSales,
+                COALESCE(SUM(soi.quantity), 0) as productsSold
+              FROM seller_orders so
+              LEFT JOIN (
+                SELECT seller_order_id, SUM(quantity) as quantity 
+                FROM seller_order_items 
+                GROUP BY seller_order_id
+              ) soi ON so.id = soi.seller_order_id
+              WHERE so.seller_id = ? ${dateFilter ? 'AND so.created_at BETWEEN ? AND ?' : ''}
+            `, dateFilter ? [adminId, dateFilter.from, dateFilter.to] : [adminId]);
+
+            // Orders Served (non-pending, non-rejected)
+            const orderParams: any[] = [adminId];
+            if (dateFilter) {
+              orderParams.push(dateFilter.from, dateFilter.to);
+            }
+            const [ordersServedRows]: any = await conn.execute(`
+              SELECT COUNT(*) as count 
+              FROM seller_orders 
+              WHERE seller_id = ? AND status NOT IN ('pending', 'rejected') ${dateFilter ? 'AND created_at BETWEEN ? AND ?' : ''}
+            `, orderParams);
+
+            // Active Customers
+            const [customerRows]: any = await conn.execute(`
+              SELECT COUNT(DISTINCT o.customer_id) as count
+              FROM seller_orders so
+              JOIN orders o ON so.order_id = o.id
+              WHERE so.seller_id = ? ${dateFilter ? 'AND so.created_at BETWEEN ? AND ?' : ''}
+            `, dateFilter ? [adminId, dateFilter.from, dateFilter.to] : [adminId]);
+
+            // Monthly Revenue (Current Month) - from all shards
+            const [monthlyRevRows]: any = await conn.execute(`
+              SELECT COALESCE(SUM(total_amount), 0) as count
+              FROM seller_orders
+              WHERE seller_id = ? 
+              AND MONTH(created_at) = MONTH(CURRENT_DATE()) 
+              AND YEAR(created_at) = YEAR(CURRENT_DATE())
+            `, [adminId]);
+
+            // Time-series data
+            const startDate = fromDate ? new Date(fromDate as string) : new Date(new Date().getFullYear(), 0, 1);
+            const endDate = toDate ? new Date(toDate as string) : new Date();
+            const [timeSeriesRows]: any = await conn.execute(`
+              SELECT 
+                DATE(created_at) as date,
+                COALESCE(SUM(total_amount), 0) as totalSales,
+                COUNT(*) as ordersCount
+              FROM seller_orders
+              WHERE seller_id = ? 
+              AND created_at BETWEEN ? AND ?
+              GROUP BY DATE(created_at)
+              ORDER BY date ASC
+            `, [adminId, startDate, endDate]);
+
+            // Inventory count (distinct products)
+            const [invRows]: any = await conn.execute(
               'SELECT COUNT(DISTINCT product_id) as count FROM seller_product_details WHERE seller_id = ?',
               [adminId]
             );
+
             await conn.end();
-            return Number(rows[0]?.count || 0);
+
+            return {
+              totalSales: Number(salesRows[0]?.totalSales || 0),
+              productsSold: Number(salesRows[0]?.productsSold || 0),
+              ordersServed: Number(ordersServedRows[0]?.count || 0),
+              activeCustomers: Number(customerRows[0]?.count || 0),
+              monthlyRevenue: Number(monthlyRevRows[0]?.count || 0),
+              totalProductsInInventory: Number(invRows[0]?.count || 0),
+              timeSeriesRows
+            };
           } catch (err) {
-            console.error(`Inventory check failed on ${host}:`, err);
-            return 0;
+            console.error(`Dashboard metrics failed on ${shardHost}:`, err);
+            return {
+              totalSales: 0, productsSold: 0, ordersServed: 0,
+              activeCustomers: 0, monthlyRevenue: 0, totalProductsInInventory: 0,
+              timeSeriesRows: []
+            };
           }
         });
 
-        const inventoryResults = await Promise.all(inventoryPromises);
-        totalProductsInInventory = inventoryResults.reduce((sum, h) => sum + h, 0);
+        const shardMetrics = await Promise.all(shardMetricPromises);
 
-        // 5. Finalize Metrics
-        const totalSales = Number(salesRows[0]?.totalSales || 0);
-        const productsSold = Number(salesRows[0]?.productsSold || 0);
-        const totalProfit = Math.round(totalSales * 0.4);
-        const ordersServed = Number(ordersServedRows[0]?.count || 0);
-        const activeCustomers = Number(customerRows[0]?.count || 0);
-        const monthlyRevenue = Number(monthlyRevRows[0]?.count || 0);
+        // 3. Aggregate results across shards
+        const aggregated = shardMetrics.reduce((acc, m) => ({
+          totalSales: acc.totalSales + m.totalSales,
+          productsSold: acc.productsSold + m.productsSold,
+          ordersServed: acc.ordersServed + m.ordersServed,
+          activeCustomers: acc.activeCustomers + m.activeCustomers,
+          monthlyRevenue: acc.monthlyRevenue + m.monthlyRevenue,
+          totalProductsInInventory: acc.totalProductsInInventory + m.totalProductsInInventory
+        }), {
+          totalSales: 0, productsSold: 0, ordersServed: 0,
+          activeCustomers: 0, monthlyRevenue: 0, totalProductsInInventory: 0
+        });
+
+        // Aggregate time-series: merge by date
+        const timeSeriesMap = new Map<string, { totalSales: number; ordersCount: number }>();
+        shardMetrics.forEach(m => {
+          if (Array.isArray(m.timeSeriesRows)) {
+            m.timeSeriesRows.forEach((row: any) => {
+              const date = row.date as string;
+              const existing = timeSeriesMap.get(date) || { totalSales: 0, ordersCount: 0 };
+              timeSeriesMap.set(date, {
+                totalSales: existing.totalSales + Number(row.totalSales || 0),
+                ordersCount: existing.ordersCount + Number(row.ordersCount || 0)
+              });
+            });
+          }
+        });
+
+        // Sort time-series by date
+        const sortedDates = Array.from(timeSeriesMap.keys()).sort();
+        const timeSeries = {
+          labels: sortedDates,
+          salesData: sortedDates.map(d => timeSeriesMap.get(d)!.totalSales),
+          profitData: sortedDates.map(d => Math.round(timeSeriesMap.get(d)!.totalSales * 0.4)),
+          ordersData: sortedDates.map(d => timeSeriesMap.get(d)!.ordersCount)
+        };
+
+        // 5. Finalize Metrics — use aggregated values from all shards
+        const totalProfit = Math.round(aggregated.totalSales * 0.4);
 
         const metrics = {
           totalSales: {
-            value: `$${totalSales.toLocaleString()}`,
+            value: `$${aggregated.totalSales.toLocaleString()}`,
             trend: '+7.6% from last month',
-            numericValue: totalSales
+            numericValue: aggregated.totalSales
           },
           totalProfit: {
             value: `$${totalProfit.toLocaleString()}`,
@@ -675,29 +693,29 @@ if (cluster.isPrimary) {
             numericValue: totalProfit
           },
           ordersServed: {
-            value: ordersServed.toString(),
+            value: aggregated.ordersServed.toString(),
             trend: '+8.1% from last month',
-            numericValue: ordersServed
+            numericValue: aggregated.ordersServed
           },
           activeCustomers: {
-            value: activeCustomers.toLocaleString(),
+            value: aggregated.activeCustomers.toLocaleString(),
             trend: '+12.4% from last month',
-            numericValue: activeCustomers
+            numericValue: aggregated.activeCustomers
           },
           monthlyRevenue: {
-            value: `$${monthlyRevenue.toLocaleString()}`,
+            value: `$${aggregated.monthlyRevenue.toLocaleString()}`,
             trend: '+5.8% from last month',
-            numericValue: monthlyRevenue
+            numericValue: aggregated.monthlyRevenue
           },
           productsSold: {
-            value: productsSold.toLocaleString(),
+            value: aggregated.productsSold.toLocaleString(),
             trend: '+9.2% from last month',
-            numericValue: productsSold
+            numericValue: aggregated.productsSold
           },
           totalProductsInInventory: {
-            value: totalProductsInInventory,
+            value: aggregated.totalProductsInInventory,
             trend: '+0% from last month',
-            numericValue: totalProductsInInventory
+            numericValue: aggregated.totalProductsInInventory
           }
         };
 
@@ -723,7 +741,10 @@ if (cluster.isPrimary) {
     }
   );
 
-  // Fetch products endpoint - returns array of product objects for a seller
+  // Fetch products endpoint
+  // Uses the same hash algorithm as product storage: hash the store's pincode via
+  // ShardHelper.getShardHost(pincode) to determine which shard the products are in.
+  // Groups stores by shard so only the relevant shard is queried per store.
   app.get(
     "/:_id/fetch-products",
     verifyClerkToken,
@@ -731,60 +752,245 @@ if (cluster.isPrimary) {
       try {
         const adminId = req.params._id;
 
-        // Check Redis cache first
-        if (redisClient.isOpen) {
-          const cachedProducts = await redisClient.lRange(`productList:admin:${adminId}`, 0, -1);
-          if (cachedProducts && cachedProducts.length > 0) {
-            console.log("<Redis products hit>");
-            const products = cachedProducts.map(product => JSON.parse(product));
-            res.status(200).json(products);
-            return;
+        // 1. Fetch seller's configured stores for display metadata (grouping by pincode)
+        const globalConn = await mysql.createConnection({
+          host: 'global_sql_data',
+          port: 3306,
+          user: 'root',
+          database: 'xvstore'
+        });
+
+        let stores: any[] = [];
+        try {
+          const [storeRows] = await globalConn.execute(
+            'SELECT id, store_number, pincode, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+            [adminId]
+          );
+          stores = (storeRows as any[]);
+        } catch (e: any) {
+          // seller_stores table doesn't exist — fall back to old store table
+          const [storeRows] = await globalConn.execute(
+            'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+            [adminId]
+          );
+          stores = (storeRows as any[]).map((s: any) => ({ ...s, pincode: String(s.pincode) }));
+        }
+        await globalConn.end();
+
+        // 2. Find ALL shards where this seller has data (via seller_to_shards tracking table,
+        //    which records the shard when a product is added via AddProductConsumer/UpdateProductConsumer)
+        //    Products are sharded by PRODUCT ID hash, NOT by pincode hash.
+        const sellerShards = await ShardHelper.getSellerShards(adminId);
+        console.log(`FETCH-PRODUCTS: Seller ${adminId} has data in shards: ${sellerShards.join(', ')}`);
+
+        if (sellerShards.length === 0) {
+          res.status(200).json([]);
+          return;
+        }
+
+        // 3. Query ALL seller shards by seller_id only (no pincode filter — products are NOT pincode-sharded)
+        const targetShards = sellerShards.map(host => ({ shardHost: host, pincodes: [] as string[] }));
+
+        // 4. Query each target shard in parallel
+        const shardQueries = targetShards.map(async ({ shardHost, pincodes }) => {
+          const shardIndex = parseInt(shardHost.replace('mysql', '')) - 1;
+          try {
+            const connection = await mysql.createConnection({
+              host: shardHost,
+              port: 3306,
+              user: 'root',
+              database: 'xvstore'
+            });
+
+            let rows: any[];
+            if (pincodes.length > 0) {
+              // Hash-based: query only products in this store's pincodes
+              const placeholders = pincodes.map(() => '?').join(',');
+              [rows] = await (connection.execute(`
+                SELECT 
+                  p.id,
+                  p.product_name,
+                  p.ean_upc_type,
+                  p.ean_upc_number,
+                  p.category,
+                  p.model_number,
+                  p.product_description,
+                  p.price_currency,
+                  p.price_amount,
+                  p.price_discount_percentage,
+                  spd.seller_id,
+                  spd.quantity,
+                  spd.pincode,
+                  p.created_at,
+                  p.updated_at
+                FROM products p
+                JOIN seller_product_details spd ON p.id = spd.product_id
+                WHERE spd.seller_id = ? AND spd.pincode IN (${placeholders})
+              `, [adminId, ...pincodes]) as any);
+            } else {
+              // Fallback: query by seller_id only (no pincode filter)
+              [rows] = await (connection.execute(`
+                SELECT 
+                  p.id,
+                  p.product_name,
+                  p.ean_upc_type,
+                  p.ean_upc_number,
+                  p.category,
+                  p.model_number,
+                  p.product_description,
+                  p.price_currency,
+                  p.price_amount,
+                  p.price_discount_percentage,
+                  spd.seller_id,
+                  spd.quantity,
+                  spd.pincode,
+                  p.created_at,
+                  p.updated_at
+                FROM products p
+                JOIN seller_product_details spd ON p.id = spd.product_id
+                WHERE spd.seller_id = ?
+              `, [adminId]) as any);
+            }
+
+            rows = rows as any[];
+
+            // Fetch images and keywords for these products
+            const productIds = [...new Set(rows.map(r => r.id as string))];
+            let imageRows: any[] = [];
+            let keywordRows: any[] = [];
+
+            if (productIds.length > 0) {
+              const pPlaceholders = productIds.map(() => '?').join(',');
+              [imageRows] = await (connection.execute(
+                `SELECT product_id, size, base64, extension FROM product_images WHERE product_id IN (${pPlaceholders})`,
+                productIds
+              ) as any);
+              [keywordRows] = await (connection.execute(
+                `SELECT product_id, keyword FROM product_keywords WHERE product_id IN (${pPlaceholders})`,
+                productIds
+              ) as any);
+            }
+
+            await connection.end();
+            return { shardHost, shardIndex, rows, imageRows: imageRows as any[], keywordRows: keywordRows as any[] };
+          } catch (err) {
+            console.error(`Product fetch failed on ${shardHost}:`, err);
+            return { shardHost, shardIndex, rows: [], imageRows: [], keywordRows: [] };
           }
-        }
+        });
 
-        // Fetch from Sanity if not in cache
-        const query = `*[_type=="product" && seller._ref==$adminId]{
-          _id,
-          productName,
-          category,
-          eanUpcIsbnGtinAsinType,
-          eanUpcNumber,
-          quantity,
-          pincode,
-          currency,
-          price,
-          keywords,
-          imagesBase64,
-          seller,
-          productDescription,
-          modelNumber,
-          _createdAt,
-          _updatedAt
-        }`;
+        const shardResults = await Promise.all(shardQueries);
 
-        const products = await sanityClient.fetch(query, { adminId });
+        // 5. Build image/keyword lookup maps
+        const imageMap = new Map<string, any[]>();
+        const keywordsMap = new Map<string, string[]>();
 
-        console.log(`Fetched ${products.length} products for admin ${adminId}`);
-
-        // Cache the results in Redis
-        if (redisClient.isOpen && products.length > 0) {
-          const pipeline = redisClient.multi();
-
-          // Clear existing cache
-          pipeline.del(`productList:admin:${adminId}`);
-
-          // Add all products to the list
-          products.forEach((product: any) => {
-            pipeline.rPush(`productList:admin:${adminId}`, JSON.stringify(product));
+        shardResults.forEach(({ imageRows, keywordRows }) => {
+          (imageRows as any[]).forEach((row: any) => {
+            if (!imageMap.has(row.product_id)) imageMap.set(row.product_id, []);
+            imageMap.get(row.product_id)!.push({ size: row.size, base64: row.base64, extension: row.extension });
           });
+          (keywordRows as any[]).forEach((row: any) => {
+            if (!keywordsMap.has(row.product_id)) keywordsMap.set(row.product_id, []);
+            keywordsMap.get(row.product_id)!.push(row.keyword);
+          });
+        });
 
-          // Set expiration (1 hour)
-          pipeline.expire(`productList:admin:${adminId}`, 3600);
+        // 6. Build a per-pincode map of products (deduplicated by product_id)
+        const productsByPincode = new Map<string, any[]>();
 
-          await pipeline.exec();
+        shardResults.forEach(({ rows }) => {
+          (rows as any[]).forEach((row: any) => {
+            const pc = String(row.pincode);
+            if (!productsByPincode.has(pc)) {
+              productsByPincode.set(pc, []);
+            }
+
+            const existing = productsByPincode.get(pc)!;
+            const dup = existing.find((p: any) => p._id === row.id);
+            if (!dup) {
+              existing.push({
+                _id: row.id,
+                productName: row.product_name,
+                category: row.category,
+                eanUpcIsbnGtinAsinType: row.ean_upc_type,
+                eanUpcNumber: row.ean_upc_number,
+                quantity: row.quantity,
+                pincode: pc,
+                currency: row.price_currency || 'INR',
+                price: {
+                  pdtPrice: Number(row.price_amount),
+                  discountPercentage: Number(row.price_discount_percentage),
+                  currency: row.price_currency || 'INR'
+                },
+                productDescription: row.product_description,
+                modelNumber: row.model_number,
+                seller: row.seller_id,
+                imagesBase64: imageMap.get(row.id) || [],
+                keywords: keywordsMap.get(row.id) || [],
+                _createdAt: row.created_at,
+                _updatedAt: row.updated_at
+              });
+            }
+          });
+        });
+
+        // 7. Build store-grouped response — group products by pincode and match to stores
+        const storeGroups: any[] = [];
+        const storeByPincode = new Map<string, any>();
+        stores.forEach(s => storeByPincode.set(String(s.pincode), s));
+
+        if (productsByPincode.size > 0) {
+          productsByPincode.forEach((products, pincode) => {
+            const store = storeByPincode.get(pincode);
+            const shardHost = ShardHelper.getShardHost(pincode); // hash for display/deterministic, not for routing
+            const shardIndex = parseInt(shardHost.replace('mysql', '')) - 1;
+            storeGroups.push({
+              storeInfo: store ? {
+                id: store.id,
+                store_number: store.store_number || 0,
+                pincode,
+                county: store.county,
+                state: store.state,
+                country: store.country
+              } : {
+                id: Number(pincode),
+                pincode,
+                county: '',
+                state: '',
+                country: ''
+              },
+              shardHost,
+              shardIndex,
+              products
+            });
+          });
+        } else {
+          // No products found — return empty list with store info if available
+          stores.forEach(store => {
+            const pincode = String(store.pincode);
+            const shardHost = ShardHelper.getShardHost(pincode);
+            const shardIndex = parseInt(shardHost.replace('mysql', '')) - 1;
+            storeGroups.push({
+              storeInfo: {
+                id: store.id,
+                store_number: store.store_number || 0,
+                pincode,
+                county: store.county,
+                state: store.state,
+                country: store.country
+              },
+              shardHost,
+              shardIndex,
+              products: []
+            });
+          });
         }
 
-        res.status(200).json(products);
+        const totalProducts = storeGroups.reduce((sum, g) => sum + g.products.length, 0);
+        console.log(`Fetched ${totalProducts} products across ${storeGroups.length} store(s) for seller ${adminId}`);
+
+        res.status(200).json(storeGroups);
       } catch (error: any) {
         console.error('Fetch products error:', error);
         res.status(500).json({ error: error.message });
@@ -792,7 +998,7 @@ if (cluster.isPrimary) {
     }
   );
 
-  // Fetch orders assigned to a seller
+  // Fetch orders assigned to a seller — queries ALL shards where seller has data
   app.get(
     "/seller-orders/:sellerId",
     verifyClerkToken,
@@ -800,88 +1006,56 @@ if (cluster.isPrimary) {
       console.log("<Fetching orders for seller>:", req.params.sellerId);
       try {
         const sellerId = req.params.sellerId;
-        let shardHost = 'mysql1'; // default fallback
 
-        // 1. Determine Shard Host based on Seller Address
-        let sellerPincode: string | undefined;
+        // 1. Get all shards this seller has data in
+        const sellerShards = await ShardHelper.getSellerShards(sellerId);
+        console.log(`Seller ${sellerId} has data in shards: ${sellerShards.join(', ')}`);
 
-        // Try Redis first
-        if (redisClient.isOpen) {
-          const cachedAdmin = await redisClient.hGet("hashSet:admin:details", sellerId);
-          if (cachedAdmin) {
-            try {
-              const adminData = JSON.parse(cachedAdmin);
-              sellerPincode = adminData.address?.pincode;
-              console.log("Found seller pincode in Redis:", sellerPincode);
-            } catch (e) {
-              console.warn("Failed to parse cached admin data", e);
-            }
+        // 2. Query ALL shards in parallel
+        const shardQueries = sellerShards.map(async (shardHost) => {
+          try {
+            const connection = await mysql.createConnection({
+              host: shardHost,
+              port: 3306,
+              user: 'root',
+              database: 'xvstore'
+            });
+
+            const [rows] = await connection.execute(`
+              SELECT 
+                so.id,
+                so.order_id,
+                so.seller_id,
+                so.status,
+                so.total_amount,
+                so.is_partial_fulfillment,
+                so.notes,
+                so.accepted_at,
+                so.rejection_reason,
+                so.created_at,
+                soi.product_id,
+                soi.quantity,
+                soi.price
+              FROM seller_orders so
+              LEFT JOIN seller_order_items soi ON so.id = soi.seller_order_id
+              WHERE so.seller_id = ?
+              ORDER BY so.created_at DESC
+            `, [sellerId]);
+
+            await connection.end();
+            return { shardHost, rows: rows as any[] };
+          } catch (err) {
+            console.error(`Order fetch failed on ${shardHost}:`, err);
+            return { shardHost, rows: [] };
           }
-        }
-
-        // If not in Redis (or no state), fetch from Global DB
-        if (!sellerPincode) {
-          console.log("Seller address not in cache, fetching from Global DB...");
-          const globalConnection = await mysql.createConnection({
-            host: 'global_sql_data',
-            port: 3306,
-            user: 'root',
-            database: 'xvstore'
-          });
-
-          const [rows]: any = await globalConnection.execute(
-            'SELECT address_pincode FROM sellers WHERE id = ?',
-            [sellerId]
-          );
-          await globalConnection.end();
-
-          if (Array.isArray(rows) && rows.length > 0) {
-            sellerPincode = rows[0].address_pincode;
-            console.log("Fetched seller pincode from Global DB:", sellerPincode);
-          }
-        }
-
-        // Calculate Shard
-        // Priority: Pincode -> ID (fallback)
-        const shardKey = sellerPincode || sellerId;
-        shardHost = ShardHelper.getShardHost(shardKey);
-        console.log(`Routing to shard: ${shardHost} (based on: ${sellerPincode ? 'Pincode' : 'ID'})`);
-
-        // 2. Connect to the correct Shard
-        const connection = await mysql.createConnection({
-          host: shardHost,
-          port: 3306,
-          user: 'root',
-          database: 'xvstore'
         });
 
-        // Query both seller_orders and their items
-        const [rows] = await connection.execute(`
-          SELECT 
-            so.id,
-            so.order_id,
-            so.seller_id,
-            so.status,
-            so.total_amount,
-            so.is_partial_fulfillment,
-            so.notes,
-            so.accepted_at,
-            so.rejection_reason,
-            so.created_at,
-            soi.product_id,
-            soi.quantity,
-            soi.price
-          FROM seller_orders so
-          LEFT JOIN seller_order_items soi ON so.id = soi.seller_order_id
-          WHERE so.seller_id = ?
-          ORDER BY so.created_at DESC
-        `, [sellerId]);
+        const shardResults = await Promise.all(shardQueries);
 
-        await connection.end();
-
+        // 3. Merge results from all shards, deduplicating by order ID
         const ordersMap = new Map();
 
-        if (Array.isArray(rows)) {
+        shardResults.forEach(({ rows }) => {
           rows.forEach((row: any) => {
             if (!ordersMap.has(row.id)) {
               ordersMap.set(row.id, {
@@ -913,10 +1087,13 @@ if (cluster.isPrimary) {
               });
             }
           });
-        }
+        });
 
-        const result = Array.from(ordersMap.values());
-        console.log(`<Fetched ${result.length} orders for seller from ${shardHost}>`);
+        // 4. Sort merged results by creation date (newest first)
+        const result = Array.from(ordersMap.values())
+          .sort((a: any, b: any) => new Date(b._createdAt).getTime() - new Date(a._createdAt).getTime());
+
+        console.log(`<Fetched ${result.length} orders for seller across ${sellerShards.length} shard(s)>`);
         res.status(200).json(result);
       } catch (err: any) {
         console.error("Error fetching seller orders:", err);

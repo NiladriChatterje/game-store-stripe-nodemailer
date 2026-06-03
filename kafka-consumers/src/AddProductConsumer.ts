@@ -127,6 +127,13 @@ async function main() {
             'INSERT INTO product_sellers (product_id, seller_id, quantity) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)',
             [productId, productPayload.seller, productPayload.quantity]
           );
+
+          // Record seller → shard mapping in global DB for optimized multi-shard queries
+          const shardHost = PRODUCT_SHARDS_CONFIG[shardIndex].host;
+          await globalPool.execute(
+            'INSERT IGNORE INTO seller_to_shards (seller_id, shard_host) VALUES (?, ?)',
+            [productPayload.seller, shardHost]
+          );
         }
 
         isNewProduct = true;

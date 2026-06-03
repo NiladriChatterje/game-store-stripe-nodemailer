@@ -3,7 +3,7 @@ import { createClient as RedisClient } from "redis";
 import type { ProductType } from "../declaration/productType.d.ts";
 import { uuidv7 as uuid } from 'uuidv7'
 import mysql from 'mysql2/promise';
-import { ShardRouter, PRODUCT_SHARDS_CONFIG } from './utils/ShardRouter';
+import { ShardRouter, PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter';
 
 const shardPools = PRODUCT_SHARDS_CONFIG.map(config => mysql.createPool({
     ...config,
@@ -11,6 +11,13 @@ const shardPools = PRODUCT_SHARDS_CONFIG.map(config => mysql.createPool({
     connectionLimit: 10,
     queueLimit: 0
 }));
+
+const globalPool = mysql.createPool({
+  ...GLOBAL_DB_CONFIG,
+  waitForConnections: true,
+  connectionLimit: 5,
+  queueLimit: 0
+});
 
 const kafka: Kafka = new Kafka({
     clientId: "xvstore",
@@ -97,6 +104,17 @@ async function main() {
                     'INSERT INTO product_sellers (product_id, seller_id, quantity) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)',
                     [productId, productPayload.seller, productPayload.quantity]
                 );
+
+                // Record seller → shard mapping in global DB for optimized multi-shard queries
+                const shardHost = PRODUCT_SHARDS_CONFIG[shardIndex].host;
+                try {
+                    await globalPool.execute(
+                        'INSERT IGNORE INTO seller_to_shards (seller_id, shard_host) VALUES (?, ?)',
+                        [productPayload.seller, shardHost]
+                    );
+                } catch (e) {
+                    console.warn(`Failed to record seller→shard mapping for ${productPayload.seller} on ${shardHost}:`, e);
+                }
             }
 
             // 2. Update Seller Product Details (Inventory) in Shard
