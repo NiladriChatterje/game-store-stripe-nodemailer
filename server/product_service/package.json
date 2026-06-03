@@ -27,8 +27,8 @@
   },
   "scripts": {
     "build": "tspc",
-    "start": "tspc && node dist/index",
-    "dev": "tspc && node dist/index "
+    "start": "tsx --watch src/index.ts",
+    "dev": "tsx --watch src/index.ts"
   },
   "keywords": [
     "product_service",
