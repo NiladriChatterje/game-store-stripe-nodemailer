@@ -177,17 +177,64 @@ if (cluster.isPrimary) {
           });
 
           // Sort and Paginate (Simplistic for now, should ideally be more sophisticated)
-          const paginatedProducts = allProducts.slice(offset, offset + 10).map(p => ({
+          const productIds = [...new Set(allProducts.map((p: any) => p.id))];
+          
+          // Fetch images for all products from all shards
+          const imagesPromises = shardPools.map(pool => {
+            if (productIds.length === 0) return Promise.resolve([[], []]);
+            const placeholders = productIds.map(() => '?').join(',');
+            return pool.execute(
+              `SELECT product_id, size, \`base64\`, extension FROM product_images WHERE product_id IN (${placeholders})`,
+              productIds
+            );
+          });
+          const imagesResults = await Promise.all(imagesPromises);
+          
+          // Build image map
+          const imageMap: Record<string, any[]> = {};
+          imagesResults.forEach(([rows]: any) => {
+            if (Array.isArray(rows)) {
+              rows.forEach((row: any) => {
+                if (!imageMap[row.product_id]) imageMap[row.product_id] = [];
+                imageMap[row.product_id].push({ size: row.size, base64: row.base64, extension: row.extension });
+              });
+            }
+          });
+
+          // Fetch keywords for all products from all shards
+          const keywordsPromises = shardPools.map(pool => {
+            if (productIds.length === 0) return Promise.resolve([[], []]);
+            const placeholders = productIds.map(() => '?').join(',');
+            return pool.execute(
+              `SELECT product_id, keyword FROM product_keywords WHERE product_id IN (${placeholders})`,
+              productIds
+            );
+          });
+          const keywordsResults = await Promise.all(keywordsPromises);
+          
+          // Build keywords map
+          const keywordsMap: Record<string, string[]> = {};
+          keywordsResults.forEach(([rows]: any) => {
+            if (Array.isArray(rows)) {
+              rows.forEach((row: any) => {
+                if (!keywordsMap[row.product_id]) keywordsMap[row.product_id] = [];
+                keywordsMap[row.product_id].push(row.keyword);
+              });
+            }
+          });
+          
+          const paginatedProducts = allProducts.slice(offset, offset + 10).map((p: any) => ({
             _id: p.id,
             productName: p.product_name,
             category: p.category,
             price: {
               pdtPrice: p.price_amount,
               discountPercentage: p.price_discount_percentage,
-              currency: 'INR'
+              currency: p.price_currency || 'INR'
             },
             quantity: p.quantity,
-            imagesBase64: p.imagesBase64 ? JSON.parse(p.imagesBase64) : [],
+            imagesBase64: imageMap[p.id] || [],
+            keywords: keywordsMap[p.id] || [],
             eanUpcNumber: p.ean_upc_number,
             eanUpcIsbnGtinAsinType: p.ean_upc_type,
             productDescription: p.product_description,
@@ -249,6 +296,29 @@ if (cluster.isPrimary) {
 
               const quantity = (quantityRows as any[])[0]?.quantity || 0;
 
+              // Fetch images from product_images table
+              const [imageRows] = await mysqlPool.execute(
+                'SELECT size, `base64`, extension FROM product_images WHERE product_id = ?',
+                [productId]
+              );
+              
+              const imagesBase64 = Array.isArray(imageRows) 
+                ? (imageRows as any[]).map((img: any) => ({
+                    size: img.size,
+                    base64: img.base64,
+                    extension: img.extension
+                  }))
+                : [];
+
+              // Fetch keywords from product_keywords table
+              const [keywordRows] = await mysqlPool.execute(
+                'SELECT keyword FROM product_keywords WHERE product_id = ?',
+                [productId]
+              );
+              const keywords = Array.isArray(keywordRows)
+                ? (keywordRows as any[]).map((k: any) => k.keyword)
+                : [];
+
               const result = {
                 _id: product.id,
                 productName: product.product_name,
@@ -258,12 +328,13 @@ if (cluster.isPrimary) {
                 price: {
                   pdtPrice: product.price_amount,
                   discountPercentage: product.price_discount_percentage,
-                  currency: 'INR'
+                  currency: product.price_currency || 'INR'
                 },
                 quantity: quantity,
+                keywords,
                 productDescription: product.product_description,
                 modelNumber: product.model_number,
-                imagesBase64: product.imagesBase64 ? JSON.parse(product.imagesBase64) : []
+                imagesBase64
               };
 
               res.status(200).json(result);

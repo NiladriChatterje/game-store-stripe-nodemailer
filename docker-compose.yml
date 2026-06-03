@@ -339,6 +339,11 @@ services:
       - kafka3
       - redis_storage
       - global_sql_data
+      - mysql1
+      - mysql2
+      - mysql3
+      - mysql4
+      - mysql5
 
   sse_service:
     build:

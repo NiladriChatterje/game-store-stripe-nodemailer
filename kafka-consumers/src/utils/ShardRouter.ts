@@ -21,6 +21,7 @@ export const PRODUCT_SHARDS_CONFIG: ShardConfig[] = [
     { host: 'mysql2', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql2
     { host: 'mysql3', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql3
     { host: 'mysql4', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql4
+    { host: 'mysql5', port: 3306, user: 'root', password: '', database: 'xvstore' }, // mysql5
 ];
 
 export class ShardRouter {

@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS seller_product_details (
     quantity INT DEFAULT 0,
     geo_lat DOUBLE,
     geo_lng DOUBLE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    -- FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-    -- FOREIGN KEY (seller_id) REFERENCES sellers(id) ON DELETE CASCADE
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_seller_product_details_product_id FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );

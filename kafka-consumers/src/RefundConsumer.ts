@@ -41,7 +41,7 @@ async function main() {
                 fulfilledAmount: number;
                 fulfilledQuantity: number;
                 requestedQuantity: number;
-            } = JSON.parse(message.value.toString());
+            } = message.value ? JSON.parse(message.value.toString()) : {};
 
             console.log('Processing refund:', {
                 orderId: refundPayload.orderId,
@@ -145,7 +145,7 @@ async function main() {
             console.error('Failed to process refund message:', {
                 error: error?.message,
                 stack: error?.stack,
-                payload: message.value.toString()
+                payload: message.value ? message.value.toString() : null
             });
 
             // Commit offset even on error to prevent infinite retry loop

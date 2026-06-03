@@ -50,19 +50,19 @@ async function main() {
   }: EachMessagePayload) {
     console.log("<arrayBufferLike> : ", message.value);
 
+    const productPayload: ProductType = message.value ? JSON.parse(
+      message.value.toString()
+    ) : null;
+
+    const productId = productPayload._id || uuidv4();
+
+    // DETERMINE SHARD
+    const shardIndex = ShardRouter.getShardIndex(productId);
+    const mysqlPool = shardPools[shardIndex];
+
+    console.log(`Routing product ${productId} to shard ${shardIndex}`);
+
     try {
-      const productPayload: ProductType = message.value ? JSON.parse(
-        message.value.toString()
-      ) : null;
-
-      const productId = productPayload._id || uuidv4();
-
-      // DETERMINE SHARD
-      const shardIndex = ShardRouter.getShardIndex(productId);
-      const mysqlPool = shardPools[shardIndex];
-
-      console.log(`Routing product ${productId} to shard ${shardIndex}`);
-
       // Check if product exists in this shard
       const [existingProducts] = await mysqlPool.execute(
         'SELECT id FROM products WHERE ean_upc_number = ? LIMIT 1',
@@ -80,25 +80,55 @@ async function main() {
       let isNewProduct = false;
       if ((productCheck as any[]).length === 0) {
         // Insert new product into selected shard
-        await mysqlPool.execute(`
-          INSERT INTO products (
-            id, product_name, category, ean_upc_type, ean_upc_number, 
-            price_amount, price_discount_percentage, variations, 
-            product_description, model_number, imagesBase64
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          productId,
-          productPayload.productName,
-          productPayload.category,
-          productPayload.eanUpcIsbnGtinAsinType,
-          productPayload.eanUpcNumber,
-          productPayload.price.pdtPrice,
-          productPayload.price.discountPercentage,
-          JSON.stringify(productPayload.variations || []),
-          productPayload.productDescription,
-          productPayload.modelNumber || null,
-          JSON.stringify(productPayload.imagesBase64 || [])
-        ]);
+        await mysqlPool.execute(
+          `INSERT INTO products (
+            id, product_name, category, ean_upc_type, ean_upc_number,
+            price_currency, price_amount, price_discount_percentage, variations,
+            product_description, model_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            productId,
+            productPayload.productName,
+            productPayload.category,
+            productPayload.eanUpcIsbnGtinAsinType,
+            productPayload.eanUpcNumber,
+            productPayload.price?.currency || 'INR',
+            productPayload.price?.pdtPrice,
+            productPayload.price?.discountPercentage,
+            JSON.stringify(productPayload.variations || []),
+            productPayload.productDescription,
+            productPayload.modelNumber || null
+          ]
+        );
+
+        // Insert keywords into product_keywords table
+        if (productPayload.keywords && Array.isArray(productPayload.keywords)) {
+          for (const keyword of productPayload.keywords) {
+            await mysqlPool.execute(
+              'INSERT INTO product_keywords (product_id, keyword) VALUES (?, ?)',
+              [productId, keyword]
+            );
+          }
+        }
+
+        // Insert images into product_images table
+        if (productPayload.imagesBase64 && Array.isArray(productPayload.imagesBase64)) {
+          for (const image of productPayload.imagesBase64) {
+            await mysqlPool.execute(
+              'INSERT INTO product_images (product_id, size, `base64`, extension) VALUES (?, ?, ?, ?)',
+              [productId, image.size || null, image.base64 || null, image.extension || null]
+            );
+          }
+        }
+
+        // Insert seller-product mapping into product_sellers
+        if (productPayload.seller) {
+          await mysqlPool.execute(
+            'INSERT INTO product_sellers (product_id, seller_id, quantity) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)',
+            [productId, productPayload.seller, productPayload.quantity]
+          );
+        }
+
         isNewProduct = true;
       }
 
@@ -115,32 +145,20 @@ async function main() {
       if ((inventoryCheck as any[]).length === 0) {
         // Create new record in shard
         const detailId = uuidv4();
-        await mysqlPool.execute(`
-            INSERT INTO seller_product_details (id, seller_id, product_id, pincode, quantity, geo_lat, geo_lng)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-         `, [
-          detailId,
-          productPayload.seller,
-          productId,
-          productPayload.pincode,
-          productPayload.quantity,
-          productPayload.geoPoint?.lat || null,
-          productPayload.geoPoint?.lng || null
-        ]);
+        await mysqlPool.execute(
+          'INSERT INTO seller_product_details (id, seller_id, product_id, pincode, quantity, geo_lat, geo_lng) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [detailId, productPayload.seller, productId, productPayload.pincode, productPayload.quantity, productPayload.geoPoint?.lat || null, productPayload.geoPoint?.lng || null]
+        );
       } else {
         // Update existing record in shard
         const currentInventory = (inventoryCheck as any[])[0];
         const detailId = currentInventory.id;
         newQuantity = currentInventory.quantity + productPayload.quantity;
 
-        await mysqlPool.execute(`
-            UPDATE seller_product_details SET quantity = ?, geo_lat = ?, geo_lng = ? WHERE id = ?
-         `, [
-          newQuantity,
-          productPayload.geoPoint?.lat || null,
-          productPayload.geoPoint?.lng || null,
-          detailId
-        ]);
+        await mysqlPool.execute(
+          'UPDATE seller_product_details SET quantity = ?, geo_lat = ?, geo_lng = ? WHERE id = ?',
+          [newQuantity, productPayload.geoPoint?.lat || null, productPayload.geoPoint?.lng || null, detailId]
+        );
       }
 
       // Redis Updates (Cache remains centralized or based on your cluster config)
@@ -165,10 +183,10 @@ async function main() {
         // but if we want global duplicate check, it should be in global_sql_data.
         // Let's stick to shard-local for now or move to global later.
         try {
-          await mysqlPool.execute(`
-                INSERT INTO potential_duplicates (id, existing_product_id, potential_duplicate_id)
-                VALUES (?, ?, ?)
-            `, [uuidv4(), checkIfUPCExist, productId]);
+          await mysqlPool.execute(
+            'INSERT INTO potential_duplicates (id, existing_product_id, potential_duplicate_id) VALUES (?, ?, ?)',
+            [uuidv4(), checkIfUPCExist, productId]
+          );
         } catch (e) {
           console.log("Duplicate mapping failed (maybe already exists)");
         }
@@ -178,7 +196,10 @@ async function main() {
         { topic, partition, offset: message.offset },
       ]);
     } catch (error: Error | any) {
-      console.log("error :", error.message)
+      console.error("AddProductConsumer error:", error.message);
+      console.error("Error for product:", productId);
+      console.error("Error stack:", error.stack);
+      // Don't commit offset on error - allow retry
     }
   }
 
@@ -190,5 +211,3 @@ async function main() {
 }
 
 main().catch(console.error);
-
-

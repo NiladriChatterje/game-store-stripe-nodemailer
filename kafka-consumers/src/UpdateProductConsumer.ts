@@ -39,9 +39,9 @@ async function main() {
         console.log("<arrayBufferLike> : ", message.value);
 
         try {
-            const productPayload: ProductType = JSON.parse(
+            const productPayload: ProductType = message.value ? JSON.parse(
                 message.value.toString()
-            );
+            ) : null;
 
             if (!productPayload._id) return;
 
@@ -52,32 +52,52 @@ async function main() {
             const mysqlPool = shardPools[shardIndex];
 
             // 1. Update Products Table in Shard
-            await mysqlPool.execute(`
-                UPDATE products SET
-                    product_name = ?,
-                    category = ?,
-                    ean_upc_type = ?,
-                    ean_upc_number = ?,
-                    price_amount = ?,
-                    price_discount_percentage = ?,
-                    variations = ?,
-                    product_description = ?,
-                    model_number = ?,
-                    imagesBase64 = ?
-                WHERE id = ?
-            `, [
-                productPayload.productName,
-                productPayload.category,
-                productPayload.eanUpcIsbnGtinAsinType,
-                productPayload.eanUpcNumber,
-                productPayload.price.pdtPrice,
-                productPayload.price.discountPercentage,
-                JSON.stringify(productPayload.variations || []),
-                productPayload.productDescription,
-                productPayload.modelNumber || null,
-                JSON.stringify(productPayload.imagesBase64 || []),
-                productId
-            ]);
+            await mysqlPool.execute(
+                'UPDATE products SET product_name = ?, category = ?, ean_upc_type = ?, ean_upc_number = ?, price_currency = ?, price_amount = ?, price_discount_percentage = ?, variations = ?, product_description = ?, model_number = ? WHERE id = ?',
+                [
+                    productPayload.productName,
+                    productPayload.category,
+                    productPayload.eanUpcIsbnGtinAsinType,
+                    productPayload.eanUpcNumber,
+                    productPayload.price?.currency || 'INR',
+                    productPayload.price?.pdtPrice,
+                    productPayload.price?.discountPercentage,
+                    JSON.stringify(productPayload.variations || []),
+                    productPayload.productDescription,
+                    productPayload.modelNumber || null,
+                    productId
+                ]
+            );
+
+            // 1b. Update keywords: delete old, insert new
+            await mysqlPool.execute('DELETE FROM product_keywords WHERE product_id = ?', [productId]);
+            if (productPayload.keywords && Array.isArray(productPayload.keywords)) {
+                for (const keyword of productPayload.keywords) {
+                    await mysqlPool.execute(
+                        'INSERT INTO product_keywords (product_id, keyword) VALUES (?, ?)',
+                        [productId, keyword]
+                    );
+                }
+            }
+
+            // 1c. Update images: delete old, insert new
+            await mysqlPool.execute('DELETE FROM product_images WHERE product_id = ?', [productId]);
+            if (productPayload.imagesBase64 && Array.isArray(productPayload.imagesBase64)) {
+                for (const image of productPayload.imagesBase64) {
+                    await mysqlPool.execute(
+                        'INSERT INTO product_images (product_id, size, `base64`, extension) VALUES (?, ?, ?, ?)',
+                        [productId, image.size || null, image.base64 || null, image.extension || null]
+                    );
+                }
+            }
+
+            // 1d. Update product_sellers mapping
+            if (productPayload.seller) {
+                await mysqlPool.execute(
+                    'INSERT INTO product_sellers (product_id, seller_id, quantity) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)',
+                    [productId, productPayload.seller, productPayload.quantity]
+                );
+            }
 
             // 2. Update Seller Product Details (Inventory) in Shard
             const [inventoryCheck] = await mysqlPool.execute(
@@ -90,32 +110,33 @@ async function main() {
             if ((inventoryCheck as any[]).length === 0) {
                 // If not exists, insert new record
                 const detailId = uuid();
-                await mysqlPool.execute(`
-                    INSERT INTO seller_product_details (id, seller_id, product_id, pincode, quantity, geo_lat, geo_lng)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                `, [
-                    detailId,
-                    productPayload.seller || '',
-                    productId,
-                    productPayload.pincode,
-                    productPayload.quantity,
-                    productPayload.geoPoint?.lat || null,
-                    productPayload.geoPoint?.lng || null
-                ]);
+                await mysqlPool.execute(
+                    'INSERT INTO seller_product_details (id, seller_id, product_id, pincode, quantity, geo_lat, geo_lng) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [
+                        detailId,
+                        productPayload.seller || '',
+                        productId,
+                        productPayload.pincode,
+                        productPayload.quantity,
+                        productPayload.geoPoint?.lat || null,
+                        productPayload.geoPoint?.lng || null
+                    ]
+                );
             } else {
                 // If exists, increment quantity
                 const currentInventory = (inventoryCheck as any[])[0];
                 const detailId = currentInventory.id;
                 totalQuantity = currentInventory.quantity + productPayload.quantity;
 
-                await mysqlPool.execute(`
-                    UPDATE seller_product_details SET quantity = ?, geo_lat = ?, geo_lng = ? WHERE id = ?
-                `, [
-                    totalQuantity,
-                    productPayload.geoPoint?.lat || null,
-                    productPayload.geoPoint?.lng || null,
-                    detailId
-                ]);
+                await mysqlPool.execute(
+                    'UPDATE seller_product_details SET quantity = ?, geo_lat = ?, geo_lng = ? WHERE id = ?',
+                    [
+                        totalQuantity,
+                        productPayload.geoPoint?.lat || null,
+                        productPayload.geoPoint?.lng || null,
+                        detailId
+                    ]
+                );
             }
 
             // 3. Update Redis
