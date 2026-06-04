@@ -3,7 +3,8 @@ import { createClient as RedisClient } from 'redis'
 import type { ProductType } from "../declaration/productType.d.ts";
 import { uuidv4 } from "uuidv7";
 import mysql from 'mysql2/promise';
-import { ShardRouter, PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter';
+import { PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter';
+import { ShardHelper } from './utils/ShardHelper';
 
 const kafka: Kafka = new Kafka({
   clientId: "xvstore",
@@ -56,11 +57,13 @@ async function main() {
 
     const productId = productPayload._id || uuidv4();
 
-    // DETERMINE SHARD
-    const shardIndex = ShardRouter.getShardIndex(productId);
+    // DETERMINE SHARD by store pincode (deterministic, idempotent)
+    // All products from the same store (same pincode) go to the same shard.
+    // This matches seller_stores.shard_host computed at store creation time.
+    const shardIndex = ShardHelper.getShardIndex(productPayload.pincode);
     const mysqlPool = shardPools[shardIndex];
 
-    console.log(`Routing product ${productId} to shard ${shardIndex}`);
+    console.log(`Routing product ${productId} for store pincode ${productPayload.pincode} to shard ${shardIndex} (${PRODUCT_SHARDS_CONFIG[shardIndex].host})`);
 
     try {
       // Check if product exists in this shard

@@ -11,7 +11,8 @@ import { Kafka, RecordMetadata } from "kafkajs";
 import { JwtPayload } from "@clerk/types";
 import { verifyToken } from "@clerk/backend";
 import mysql from 'mysql2/promise';
-import { ShardRouter, PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter.ts';
+import { PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter.ts';
+import { ShardHelper } from './utils/ShardHelper.ts';
 
 dotenv.config();
 
@@ -178,7 +179,7 @@ if (cluster.isPrimary) {
 
           // Sort and Paginate (Simplistic for now, should ideally be more sophisticated)
           const productIds = [...new Set(allProducts.map((p: any) => p.id))];
-          
+
           // Fetch images for all products from all shards
           const imagesPromises = shardPools.map(pool => {
             if (productIds.length === 0) return Promise.resolve([[], []]);
@@ -189,7 +190,7 @@ if (cluster.isPrimary) {
             );
           });
           const imagesResults = await Promise.all(imagesPromises);
-          
+
           // Build image map
           const imageMap: Record<string, any[]> = {};
           imagesResults.forEach(([rows]: any) => {
@@ -211,7 +212,7 @@ if (cluster.isPrimary) {
             );
           });
           const keywordsResults = await Promise.all(keywordsPromises);
-          
+
           // Build keywords map
           const keywordsMap: Record<string, string[]> = {};
           keywordsResults.forEach(([rows]: any) => {
@@ -222,7 +223,7 @@ if (cluster.isPrimary) {
               });
             }
           });
-          
+
           const paginatedProducts = allProducts.slice(offset, offset + 10).map((p: any) => ({
             _id: p.id,
             productName: p.product_name,
@@ -276,8 +277,8 @@ if (cluster.isPrimary) {
               }
             }
 
-            // MySQL Shard Fetch
-            const shardIndex = ShardRouter.getShardIndex(productId);
+            // MySQL Shard Fetch — use pincode-based routing (deterministic for store→shard mapping)
+            const shardIndex = ShardHelper.getShardIndex(pincode);
             const mysqlPool = shardPools[shardIndex];
 
             const [productRows] = await mysqlPool.execute(
@@ -301,13 +302,13 @@ if (cluster.isPrimary) {
                 'SELECT size, `base64`, extension FROM product_images WHERE product_id = ?',
                 [productId]
               );
-              
-              const imagesBase64 = Array.isArray(imageRows) 
+
+              const imagesBase64 = Array.isArray(imageRows)
                 ? (imageRows as any[]).map((img: any) => ({
-                    size: img.size,
-                    base64: img.base64,
-                    extension: img.extension
-                  }))
+                  size: img.size,
+                  base64: img.base64,
+                  extension: img.extension
+                }))
                 : [];
 
               // Fetch keywords from product_keywords table
@@ -376,8 +377,8 @@ if (cluster.isPrimary) {
               }
             }
 
-            // Fetch from MySQL shard
-            const shardIndex = ShardRouter.getShardIndex(productId);
+            // Fetch from MySQL shard — use pincode-based routing (deterministic for store→shard mapping)
+            const shardIndex = ShardHelper.getShardIndex(pincode);
             const mysqlPool = shardPools[shardIndex];
 
             const [rows]: any = await mysqlPool.execute(
@@ -397,7 +398,7 @@ if (cluster.isPrimary) {
           }
         }
       });
-//post to kafka topic [product-topic] to create the product
+    //post to kafka topic [product-topic] to create the product
     app.post(
       "/add-product",
       verifyClerkToken,

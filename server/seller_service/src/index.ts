@@ -777,9 +777,10 @@ if (cluster.isPrimary) {
         }
         await globalConn.end();
 
-        // 2. Find ALL shards where this seller has data (via seller_to_shards tracking table,
-        //    which records the shard when a product is added via AddProductConsumer/UpdateProductConsumer)
-        //    Products are sharded by PRODUCT ID hash, NOT by pincode hash.
+        // 2. Products are sharded by STORE PINCODE hash, not by product ID.
+        //    All products from the same store (same pincode) land in the same shard.
+        //    We use seller_stores to get each store's pincode and compute its shard,
+        //    then only query that specific shard per store instead of all seller shards.
         const sellerShards = await ShardHelper.getSellerShards(adminId);
         console.log(`FETCH-PRODUCTS: Seller ${adminId} has data in shards: ${sellerShards.join(', ')}`);
 
@@ -788,7 +789,8 @@ if (cluster.isPrimary) {
           return;
         }
 
-        // 3. Query ALL seller shards by seller_id only (no pincode filter — products are NOT pincode-sharded)
+        // 3. Group stores by their computed shard host so we only query the correct shard per store.
+        //    With pincode-based routing, store at pincode 123456 always routes to the same shard.
         const targetShards = sellerShards.map(host => ({ shardHost: host, pincodes: [] as string[] }));
 
         // 4. Query each target shard in parallel
@@ -804,7 +806,8 @@ if (cluster.isPrimary) {
 
             let rows: any[];
             if (pincodes.length > 0) {
-              // Hash-based: query only products in this store's pincodes
+              // Pincode-based: query only products in this store's pincodes
+              // Both product data AND seller_product_details live in the same shard (routed by pincode)
               const placeholders = pincodes.map(() => '?').join(',');
               [rows] = await (connection.execute(`
                 SELECT 

@@ -3,7 +3,8 @@ import { createClient as RedisClient } from "redis";
 import type { ProductType } from "../declaration/productType.d.ts";
 import { uuidv7 as uuid } from 'uuidv7'
 import mysql from 'mysql2/promise';
-import { ShardRouter, PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter';
+import { PRODUCT_SHARDS_CONFIG, GLOBAL_DB_CONFIG } from './utils/ShardRouter';
+import { ShardHelper } from './utils/ShardHelper';
 
 const shardPools = PRODUCT_SHARDS_CONFIG.map(config => mysql.createPool({
     ...config,
@@ -13,10 +14,10 @@ const shardPools = PRODUCT_SHARDS_CONFIG.map(config => mysql.createPool({
 }));
 
 const globalPool = mysql.createPool({
-  ...GLOBAL_DB_CONFIG,
-  waitForConnections: true,
-  connectionLimit: 5,
-  queueLimit: 0
+    ...GLOBAL_DB_CONFIG,
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 0
 });
 
 const kafka: Kafka = new Kafka({
@@ -54,8 +55,10 @@ async function main() {
 
             const productId = productPayload._id;
 
-            // DETERMINE SHARD
-            const shardIndex = ShardRouter.getShardIndex(productId);
+            // DETERMINE SHARD by store pincode (deterministic, idempotent)
+            // Matches seller_stores.shard_host computed at store creation time.
+            // All products from the same store go to the same shard.
+            const shardIndex = ShardHelper.getShardIndex(productPayload.pincode);
             const mysqlPool = shardPools[shardIndex];
 
             // 1. Update Products Table in Shard
