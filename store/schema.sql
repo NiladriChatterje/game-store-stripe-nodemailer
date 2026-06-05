@@ -97,22 +97,15 @@ CREATE TABLE IF NOT EXISTS product_keywords (
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
--- Product Quantities by Pincode (from documents/ProductType.ts "quantity" pair array)
+-- Product Quantities by Pincode & Seller (from documents/ProductType.ts "quantity" pair array)
 CREATE TABLE IF NOT EXISTS product_quantities (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_id VARCHAR(255) NOT NULL,
+    seller_id VARCHAR(255) NOT NULL,
     pincode VARCHAR(20) NOT NULL,
     quantity INT NOT NULL,
+    UNIQUE KEY uq_product_seller_pincode (product_id, seller_id, pincode),
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-);
-
--- Product Sellers (Many-to-Many products <-> admins) (from documents/ProductType.ts)
-CREATE TABLE IF NOT EXISTS product_sellers (
-    product_id VARCHAR(255) NOT NULL,
-    seller_id VARCHAR(255) NOT NULL,
-    PRIMARY KEY (product_id, seller_id),
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-    FOREIGN KEY (seller_id) REFERENCES admins(id) ON DELETE CASCADE
 );
 
 -- Product Embeddings (from documents/ProductEmbeddingsType.ts)

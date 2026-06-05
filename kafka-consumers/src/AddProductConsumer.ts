@@ -124,11 +124,11 @@ async function main() {
           }
         }
 
-        // Insert seller-product mapping into product_sellers
+        // Insert seller-product-pincode mapping into product_quantities
         if (productPayload.seller) {
           await mysqlPool.execute(
-            'INSERT INTO product_sellers (product_id, seller_id, quantity) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)',
-            [productId, productPayload.seller, productPayload.quantity]
+            'INSERT INTO product_quantities (product_id, seller_id, pincode, quantity) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)',
+            [productId, productPayload.seller, productPayload.pincode, productPayload.quantity]
           );
 
           // Record seller → shard mapping in global DB for optimized multi-shard queries

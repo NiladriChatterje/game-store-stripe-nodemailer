@@ -34,12 +34,14 @@ CREATE TABLE IF NOT EXISTS product_keywords (
 
 
 
-CREATE TABLE IF NOT EXISTS product_sellers (
+CREATE TABLE IF NOT EXISTS product_quantities (
+    id INT AUTO_INCREMENT PRIMARY KEY,
     product_id VARCHAR(255) NOT NULL,
     seller_id VARCHAR(255) NOT NULL,
+    pincode CHAR(6) NOT NULL,
     quantity INT NOT NULL,
-    CONSTRAINT pk_product_sellers PRIMARY KEY (product_id, seller_id),
-    CONSTRAINT fk_product_sellers_product_id FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    UNIQUE KEY uq_product_seller_pincode (product_id, seller_id, pincode),
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS product_embeddings (
