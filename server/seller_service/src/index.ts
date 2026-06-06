@@ -3,16 +3,14 @@ import express, { Express, NextFunction, Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { AdminFieldsType } from "./delcarations/AdminFieldType";
-import { createClient, SanityClient } from '@sanity/client'
 import { createClient as RedisClient } from "redis";
-import { sanityConfig } from './utils/index.js';
 import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 import { createTransport } from "nodemailer";
-import { ClerkClient, verifyToken } from "@clerk/backend";
+import { verifyToken } from "@clerk/backend";
 import { JwtPayload } from "@clerk/types";
 import mysql from 'mysql2/promise';
 import { ShardHelper } from './utils/ShardHelper.js';
-
+import { GLOBAL_DB_CONFIG } from './utils/index.js';
 
 dotenv.config();
 
@@ -42,10 +40,18 @@ const kafka = new Kafka({
   logLevel: logLevel.ERROR,
 });
 const app: Express = express();
-const sanityClient: SanityClient = createClient(sanityConfig);
 const redisClient = RedisClient({
   url: 'redis://redis_storage:6379'
 });
+
+// MySQL Global DB Pool
+const globalPool = mysql.createPool({
+  ...GLOBAL_DB_CONFIG,
+  waitForConnections: true,
+  connectionLimit: 2,
+  queueLimit: 10
+});
+
 try {
   await redisClient.connect();
 } catch (e: Error | any) {
@@ -66,7 +72,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 //#region clerk_middleware
 const verifyClerkToken = async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
   try {
-    // Get token from Authorization header
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
       res.status(401).json({ error: 'No token provided' });
@@ -74,7 +79,7 @@ const verifyClerkToken = async (req: Request<{}, {}, AdminFieldsType>, res: Resp
     }
     const payload = await verifyToken(token, {
       secretKey: process.env.CLERK_SECRET_KEY,
-      clockSkewInMs: 300000 // Increased to 5 minutes to handle clock skew issues
+      clockSkewInMs: 300000
     });
 
     req.auth = payload;
@@ -94,21 +99,19 @@ function checkSubscriptionValidity(adminData: AdminFieldsType | null): boolean {
     return false;
   }
 
-  // Check if any subscription plan has a valid future expiration date
   const currentTime = new Date().getTime();
   console.log("inside checkSubscriptionValidity function ::: ", adminData.subscriptionPlan);
   for (const plan of adminData.subscriptionPlan) {
-    // Use the correct field name from Sanity schema: planSchemaList
     if (plan?.planSchemaList?.expireDate) {
       const expireTime = new Date(plan.planSchemaList.expireDate).getTime();
       console.log("Checking plan with expire date:", plan.planSchemaList.expireDate);
       if (expireTime > currentTime) {
-        return true; // Found at least one valid plan
+        return true;
       }
     }
   }
 
-  return false; // No valid plans found
+  return false;
 }
 //#endregion
 
@@ -157,7 +160,7 @@ app.post(
 );
 
 
-//get admin credential [redis + sanity interaction]
+//get admin credential [redis + MySQL]
 app.get(
   "/fetch-admin-data/:_id",
   verifyClerkToken,
@@ -180,8 +183,6 @@ app.get(
             if (expireTime > currentTime) {
               isPlanActive = true;
 
-              // Inject the subscription plan details into the response 
-              // because the hashSet might have been cached prior to subscription.
               if (!adminData.subscriptionPlan || adminData.subscriptionPlan.length === 0) {
                 adminData.subscriptionPlan = [{
                   transactionId: planData.transactionId,
@@ -197,8 +198,6 @@ app.get(
               await redisClient.hDel("admin:subscription:details", req.params._id);
             }
           } else {
-            // The subscription is not present in redis (maybe cache cleared),
-            // but it might be in database and also active. We also include store check.
             const connection = await mysql.createConnection({
               host: 'global_sql_data',
               port: 3306,
@@ -207,7 +206,6 @@ app.get(
             });
 
             try {
-              // Fetch subscriptions
               const [subRows] = await connection.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
               if (Array.isArray(subRows) && subRows.length > 0) {
                 adminData.subscriptionPlan = subRows.map((sub: any) => ({
@@ -223,7 +221,6 @@ app.get(
                 isPlanActive = checkSubscriptionValidity(adminData);
               }
 
-              // Fetch configured stores for this seller (try seller_stores, fall back to store)
               try {
                 const [storeRows] = await connection.execute(
                   'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
@@ -249,97 +246,81 @@ app.get(
           return;
         }
       }
-      // MySQL Replacement
-      const connection = await mysql.createConnection({
-        host: 'global_sql_data',
-        port: 3306,
-        user: 'root',
-        database: 'xvstore'
-      });
-      console.log("<<Connection successfull>>");
-      try {
-        const [rows] = await connection.execute('SELECT * FROM sellers WHERE id = ?', [req.params._id]);
-        console.log("<MySQL admin data from sql> : ", rows);
-        let result: any = null;
-        if (Array.isArray(rows) && rows.length > 0) {
-          const row = rows[0] as any;
-          result = {
-            _id: row.id,
-            _type: 'admin',
-            username: row.username,
-            email: row.email,
-            phone: row.phone,
-            geoPoint: {
-              lat: row.geo_lat,
-              lng: row.geo_lng
-            },
-            address: {
-              pincode: row.address_pincode,
-              county: row.address_county,
-              state: row.address_state,
-              country: row.address_country
-            },
-            subscriptionPlan: []
-          };
+      // MySQL query
+      const [rows] = await globalPool.execute('SELECT * FROM sellers WHERE id = ?', [req.params._id]);
+      console.log("<MySQL admin data from sql> : ", rows);
+      let result: any = null;
+      if (Array.isArray(rows) && rows.length > 0) {
+        const row = rows[0] as any;
+        result = {
+          _id: row.id,
+          _type: 'admin',
+          username: row.username,
+          email: row.email,
+          phone: row.phone,
+          geoPoint: {
+            lat: row.geo_lat,
+            lng: row.geo_lng
+          },
+          address: {
+            pincode: row.address_pincode,
+            county: row.address_county,
+            state: row.address_state,
+            country: row.address_country
+          },
+          subscriptionPlan: []
+        };
 
-          // Fetch subscriptions
-          const [subRows] = await connection.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
+        const [subRows] = await globalPool.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
 
-          if (Array.isArray(subRows) && subRows.length > 0) {
-            result.subscriptionPlan = subRows.map((sub: any) => ({
-              _key: sub.id,
-              transactionId: sub.transaction_id,
-              amount: sub.amount,
-              storeAllotment: sub.store_allotment ?? 1,
-              planSchemaList: {
-                activeDate: sub.plan_active_date,
-                expireDate: sub.plan_expire_date
-              }
-            }));
+        if (Array.isArray(subRows) && subRows.length > 0) {
+          result.subscriptionPlan = subRows.map((sub: any) => ({
+            _key: sub.id,
+            transactionId: sub.transaction_id,
+            amount: sub.amount,
+            storeAllotment: sub.store_allotment ?? 1,
+            planSchemaList: {
+              activeDate: sub.plan_active_date,
+              expireDate: sub.plan_expire_date
+            }
+          }));
+        }
+
+        try {
+          const [storeRows] = await globalPool.execute(
+            'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+            [req.params._id]
+          );
+          if (Array.isArray(storeRows)) {
+            result.stores = storeRows;
           }
-
-          // Fetch configured stores for this seller (try seller_stores, fall back to store)
-          try {
-            const [storeRows] = await connection.execute(
-              'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
-              [req.params._id]
-            );
-            if (Array.isArray(storeRows)) {
-              result.stores = storeRows;
-            }
-          } catch (e: any) {
-            const [storeRows] = await connection.execute(
-              'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
-              [req.params._id]
-            );
-            if (Array.isArray(storeRows)) {
-              result.stores = storeRows;
-            }
+        } catch (e: any) {
+          const [storeRows] = await globalPool.execute(
+            'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+            [req.params._id]
+          );
+          if (Array.isArray(storeRows)) {
+            result.stores = storeRows;
           }
         }
-
-        console.log("<admin-record-fetched from MySQL>: ", result)
-
-        // Check subscription validity
-        const isPlanActive = checkSubscriptionValidity(result);
-
-        if (!result) {
-          res.status(404).json({ error: "Admin not found" });
-          return;
-        }
-        const responseData = { ...result, isPlanActive };
-        res.status(200).json(responseData);
-
-        if (req.params._id.length > 0) {
-          await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(responseData));
-          await redisClient.sAdd("set:admin:id", req.params._id)
-        }
-        return;
-      } catch (e: Error | any) {
-        res.status(500).json({ error: e.message });
-      } finally {
-        await connection.end();
       }
+
+      console.log("<admin-record-fetched from MySQL>: ", result)
+
+      const isPlanActive = checkSubscriptionValidity(result);
+
+      if (!result) {
+        res.status(404).json({ error: "Admin not found" });
+        return;
+      }
+      const responseData = { ...result, isPlanActive };
+      res.status(200).json(responseData);
+
+      if (req.params._id.length > 0) {
+        await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(responseData));
+        await redisClient.sAdd("set:admin:id", req.params._id)
+      }
+      return;
     } catch (e: Error | any) {
       res.status(500).json({ error: e.message });
     }
@@ -373,7 +354,6 @@ app.post(
       });
 
       try {
-        // Check how many stores are allotted vs how many are configured
         const [subRows]: any = await connection.execute(
           'SELECT MAX(store_allotment) as max_allotment FROM seller_subscriptions WHERE seller_id = ?',
           [sellerId]
@@ -406,7 +386,6 @@ app.post(
           [Number(pincode), sellerId, pincode, county, state, country]
         );
 
-        // Also insert into seller_stores with pre-computed shard_host (best-effort)
         try {
           const shardHost = ShardHelper.getShardHost(pincode);
           const nextStoreNumber = existingCount + 1;
@@ -418,7 +397,6 @@ app.post(
           console.log(`seller_stores insert skipped (table may not exist): ${e.message}`);
         }
 
-        // Invalidate Redis admin cache so next fetch includes updated stores
         if (redisClient.isOpen) {
           await redisClient.hDel("hashSet:admin:details", sellerId);
         }
@@ -446,15 +424,15 @@ app.patch(
         return;
       }
     }
-    //now watching if record is in sanity.io else catfishing
-    const record = await sanityClient.fetch(`*[_type=="admin" && _id==$adminId][0]`, {
-      adminId: req.body._id
-    });
+    // Check MySQL global DB instead of Sanity
+    const [adminRows] = await globalPool.execute(
+      'SELECT id FROM sellers WHERE id = ?',
+      [req.body._id]
+    );
 
-    if (record != null) {
+    if (Array.isArray(adminRows) && adminRows.length > 0) {
       if (redisClient.isOpen) {
-        await redisClient.hSet('hashSet:admin:details', req.body._id, JSON.stringify(record))
-        await redisClient.sAdd('set:admin:id', req.body._id)
+        await redisClient.sAdd('set:admin:id', req.body._id);
       }
       next();
       return;
@@ -482,27 +460,29 @@ app.patch(
   }
 );
 
-//get product list uploaded by an admin [redis + sanity]
+//get product list uploaded by an admin [MySQL]
 app.get(
   "/:_id/product-list",
   verifyClerkToken,
   async (req: Request<{ _id: string }>, res: Response) => {
     try {
-      // FIXED: resultFromRedis was fetched but never used - removed to avoid wasted memory
-      const sanityClient: SanityClient = createClient(sanityConfig);
-      const result = await sanityClient.fetch(
-        `*[_type=="admin" && _id==$admin_id]{productReferenceAfterListing}`, {
-        admin_id: req.params._id
-      }
-      )
-      res.status(200).send(result);
+      const [rows] = await globalPool.execute(
+        `SELECT p.id, p.product_name, p.category, p.price_amount, p.created_at
+         FROM products p
+         JOIN seller_product_details spd ON p.id = spd.product_id
+         WHERE spd.seller_id = ?
+         GROUP BY p.id
+         ORDER BY p.created_at DESC`,
+        [req.params._id]
+      );
+      res.status(200).send(rows);
     } catch (error) {
       res.status(500).send(error);
     }
   }
 );
 
-//get dashboard metrics for an admin [redis + sanity]
+//get dashboard metrics for an admin
 app.get(
   "/:_id/dashboard-metrics",
   verifyClerkToken,
@@ -511,19 +491,9 @@ app.get(
       const adminId = req.params._id;
       const { fromDate, toDate } = req.query;
 
-      // Create cache key that includes date parameters if provided
-      const cacheKey = fromDate && toDate
-        ? `dashboardMetrics:admin:${adminId}:${fromDate}:${toDate}`
-        : `dashboardMetrics:admin:${adminId}`;
-
-      // NOTE: Previously, dashboard metrics were cached in Redis. To ensure the latest data is always returned,
-      // we have removed the cache lookup. The metrics will now be fetched directly from the database on every request.
-
-      // 1. Get all shards this seller has data in
       const sellerShards = await ShardHelper.getSellerShards(adminId);
       console.log(`DASHBOARD: Seller ${adminId} has data in shards: ${sellerShards.join(', ')}`);
 
-      // 2. Execute metrics queries across ALL seller shards in parallel
       const dateFilter = (fromDate && toDate) ? { from: fromDate, to: toDate } : null;
 
       const shardMetricPromises = sellerShards.map(async (shardHost) => {
@@ -535,7 +505,6 @@ app.get(
         });
 
         try {
-          // Total Sales & Products Sold
           const [salesRows]: any = await conn.execute(`
             SELECT 
               COALESCE(SUM(so.total_amount), 0) as totalSales,
@@ -549,7 +518,6 @@ app.get(
             WHERE so.seller_id = ? ${dateFilter ? 'AND so.created_at BETWEEN ? AND ?' : ''}
           `, dateFilter ? [adminId, dateFilter.from, dateFilter.to] : [adminId]);
 
-          // Orders Served (non-pending, non-rejected)
           const orderParams: any[] = [adminId];
           if (dateFilter) {
             orderParams.push(dateFilter.from, dateFilter.to);
@@ -560,7 +528,6 @@ app.get(
             WHERE seller_id = ? AND status NOT IN ('pending', 'rejected') ${dateFilter ? 'AND created_at BETWEEN ? AND ?' : ''}
           `, orderParams);
 
-          // Active Customers
           const [customerRows]: any = await conn.execute(`
             SELECT COUNT(DISTINCT o.customer_id) as count
             FROM seller_orders so
@@ -568,7 +535,6 @@ app.get(
             WHERE so.seller_id = ? ${dateFilter ? 'AND so.created_at BETWEEN ? AND ?' : ''}
           `, dateFilter ? [adminId, dateFilter.from, dateFilter.to] : [adminId]);
 
-          // Monthly Revenue (Current Month) - from all shards
           const [monthlyRevRows]: any = await conn.execute(`
             SELECT COALESCE(SUM(total_amount), 0) as count
             FROM seller_orders
@@ -577,7 +543,6 @@ app.get(
             AND YEAR(created_at) = YEAR(CURRENT_DATE())
           `, [adminId]);
 
-          // Time-series data
           const startDate = fromDate ? new Date(fromDate as string) : new Date(new Date().getFullYear(), 0, 1);
           const endDate = toDate ? new Date(toDate as string) : new Date();
           const [timeSeriesRows]: any = await conn.execute(`
@@ -592,7 +557,6 @@ app.get(
             ORDER BY date ASC
           `, [adminId, startDate, endDate]);
 
-          // Inventory count (distinct products)
           const [invRows]: any = await conn.execute(
             'SELECT COUNT(DISTINCT product_id) as count FROM seller_product_details WHERE seller_id = ?',
             [adminId]
@@ -621,7 +585,6 @@ app.get(
 
       const shardMetrics = await Promise.all(shardMetricPromises);
 
-      // 3. Aggregate results across shards
       const aggregated = shardMetrics.reduce((acc, m) => ({
         totalSales: acc.totalSales + m.totalSales,
         productsSold: acc.productsSold + m.productsSold,
@@ -634,7 +597,6 @@ app.get(
         activeCustomers: 0, monthlyRevenue: 0, totalProductsInInventory: 0
       });
 
-      // Aggregate time-series: merge by date
       const timeSeriesMap = new Map<string, { totalSales: number; ordersCount: number }>();
       shardMetrics.forEach(m => {
         if (Array.isArray(m.timeSeriesRows)) {
@@ -649,7 +611,6 @@ app.get(
         }
       });
 
-      // Sort time-series by date
       const sortedDates = Array.from(timeSeriesMap.keys()).sort();
       const timeSeries = {
         labels: sortedDates,
@@ -658,7 +619,6 @@ app.get(
         ordersData: sortedDates.map(d => timeSeriesMap.get(d)!.ordersCount)
       };
 
-      // 5. Finalize Metrics — use aggregated values from all shards
       const totalProfit = Math.round(aggregated.totalSales * 0.4);
 
       const metrics = {
@@ -699,8 +659,6 @@ app.get(
         }
       };
 
-      // NOTE: Previously, the computed metrics were cached in Redis. This has been removed to avoid stale data.
-
       const response = {
         ...metrics,
         timeSeries,
@@ -722,9 +680,6 @@ app.get(
 );
 
 // Fetch products endpoint
-// Uses the same hash algorithm as product storage: hash the store's pincode via
-// ShardHelper.getShardHost(pincode) to determine which shard the products are in.
-// Groups stores by shard so only the relevant shard is queried per store.
 app.get(
   "/:_id/fetch-products",
   verifyClerkToken,
@@ -732,7 +687,6 @@ app.get(
     try {
       const adminId = req.params._id;
 
-      // 1. Fetch seller's configured stores for display metadata (grouping by pincode)
       const globalConn = await mysql.createConnection({
         host: 'global_sql_data',
         port: 3306,
@@ -748,7 +702,6 @@ app.get(
         );
         stores = (storeRows as any[]);
       } catch (e: any) {
-        // seller_stores table doesn't exist — fall back to old store table
         const [storeRows] = await globalConn.execute(
           'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
           [adminId]
@@ -757,10 +710,6 @@ app.get(
       }
       await globalConn.end();
 
-      // 2. Products are sharded by STORE PINCODE hash, not by product ID.
-      //    All products from the same store (same pincode) land in the same shard.
-      //    We use seller_stores to get each store's pincode and compute its shard,
-      //    then only query that specific shard per store instead of all seller shards.
       const sellerShards = await ShardHelper.getSellerShards(adminId);
       console.log(`FETCH-PRODUCTS: Seller ${adminId} has data in shards: ${sellerShards.join(', ')}`);
 
@@ -769,13 +718,9 @@ app.get(
         return;
       }
 
-      // 3. Group stores by their computed shard host so we only query the correct shard per store.
-      //    With pincode-based routing, store at pincode 123456 always routes to the same shard.
       const targetShards = sellerShards.map(host => ({ shardHost: host, pincodes: [] as string[] }));
 
-      // 4. Query each target shard in parallel
       const shardQueries = targetShards.map(async ({ shardHost, pincodes }) => {
-        const shardIndex = parseInt(shardHost.replace('mysql', '')) - 1;
         const connection = await mysql.createConnection({
           host: shardHost,
           port: 3306,
@@ -786,49 +731,26 @@ app.get(
         try {
           let rows: any[];
           if (pincodes.length > 0) {
-            // Pincode-based: query only products in this store's pincodes
-            // Both product data AND seller_product_details live in the same shard (routed by pincode)
             const placeholders = pincodes.map(() => '?').join(',');
             [rows] = await (connection.execute(`
               SELECT 
-                p.id,
-                p.product_name,
-                p.ean_upc_type,
-                p.ean_upc_number,
-                p.category,
-                p.model_number,
-                p.product_description,
-                p.price_currency,
-                p.price_amount,
-                p.price_discount_percentage,
-                spd.seller_id,
-                spd.quantity,
-                spd.pincode,
-                p.created_at,
-                p.updated_at
+                p.id, p.product_name, p.ean_upc_type, p.ean_upc_number,
+                p.category, p.model_number, p.product_description,
+                p.price_currency, p.price_amount, p.price_discount_percentage,
+                spd.seller_id, spd.quantity, spd.pincode,
+                p.created_at, p.updated_at
               FROM products p
               JOIN seller_product_details spd ON p.id = spd.product_id
               WHERE spd.seller_id = ? AND spd.pincode IN (${placeholders})
             `, [adminId, ...pincodes]) as any);
           } else {
-            // Fallback: query by seller_id only (no pincode filter)
             [rows] = await (connection.execute(`
               SELECT 
-                p.id,
-                p.product_name,
-                p.ean_upc_type,
-                p.ean_upc_number,
-                p.category,
-                p.model_number,
-                p.product_description,
-                p.price_currency,
-                p.price_amount,
-                p.price_discount_percentage,
-                spd.seller_id,
-                spd.quantity,
-                spd.pincode,
-                p.created_at,
-                p.updated_at
+                p.id, p.product_name, p.ean_upc_type, p.ean_upc_number,
+                p.category, p.model_number, p.product_description,
+                p.price_currency, p.price_amount, p.price_discount_percentage,
+                spd.seller_id, spd.quantity, spd.pincode,
+                p.created_at, p.updated_at
               FROM products p
               JOIN seller_product_details spd ON p.id = spd.product_id
               WHERE spd.seller_id = ?
@@ -837,7 +759,6 @@ app.get(
 
           rows = rows as any[];
 
-          // Fetch images and keywords for these products
           const productIds = [...new Set(rows.map(r => r.id as string))];
           let imageRows: any[] = [];
           let keywordRows: any[] = [];
@@ -854,10 +775,10 @@ app.get(
             ) as any);
           }
 
-          return { shardHost, shardIndex, rows, imageRows: imageRows as any[], keywordRows: keywordRows as any[] };
+          return { shardHost, rows, imageRows: imageRows as any[], keywordRows: keywordRows as any[] };
         } catch (err) {
           console.error(`Product fetch failed on ${shardHost}:`, err);
-          return { shardHost, shardIndex, rows: [], imageRows: [], keywordRows: [] };
+          return { shardHost, rows: [], imageRows: [], keywordRows: [] };
         } finally {
           await connection.end();
         }
@@ -865,7 +786,6 @@ app.get(
 
       const shardResults = await Promise.all(shardQueries);
 
-      // 5. Build image/keyword lookup maps
       const imageMap = new Map<string, any[]>();
       const keywordsMap = new Map<string, string[]>();
 
@@ -880,7 +800,6 @@ app.get(
         });
       });
 
-      // 6. Build a per-pincode map of products (deduplicated by product_id)
       const productsByPincode = new Map<string, any[]>();
 
       shardResults.forEach(({ rows }) => {
@@ -919,7 +838,6 @@ app.get(
         });
       });
 
-      // 7. Build store-grouped response — group products by pincode and match to stores
       const storeGroups: any[] = [];
       const storeByPincode = new Map<string, any>();
       stores.forEach(s => storeByPincode.set(String(s.pincode), s));
@@ -927,8 +845,6 @@ app.get(
       if (productsByPincode.size > 0) {
         productsByPincode.forEach((products, pincode) => {
           const store = storeByPincode.get(pincode);
-          const shardHost = ShardHelper.getShardHost(pincode); // hash for display/deterministic, not for routing
-          const shardIndex = parseInt(shardHost.replace('mysql', '')) - 1;
           storeGroups.push({
             storeInfo: store ? {
               id: store.id,
@@ -944,17 +860,12 @@ app.get(
               state: '',
               country: ''
             },
-            shardHost,
-            shardIndex,
             products
           });
         });
       } else {
-        // No products found — return empty list with store info if available
         stores.forEach(store => {
           const pincode = String(store.pincode);
-          const shardHost = ShardHelper.getShardHost(pincode);
-          const shardIndex = parseInt(shardHost.replace('mysql', '')) - 1;
           storeGroups.push({
             storeInfo: {
               id: store.id,
@@ -964,8 +875,6 @@ app.get(
               state: store.state,
               country: store.country
             },
-            shardHost,
-            shardIndex,
             products: []
           });
         });
@@ -982,7 +891,7 @@ app.get(
   }
 );
 
-// Fetch orders assigned to a seller — queries ALL shards where seller has data
+// Fetch orders assigned to a seller
 app.get(
   "/seller-orders/:sellerId",
   verifyClerkToken,
@@ -991,11 +900,9 @@ app.get(
     try {
       const sellerId = req.params.sellerId;
 
-      // 1. Get all shards this seller has data in
       const sellerShards = await ShardHelper.getSellerShards(sellerId);
       console.log(`Seller ${sellerId} has data in shards: ${sellerShards.join(', ')}`);
 
-      // 2. Query ALL shards in parallel
       const shardQueries = sellerShards.map(async (shardHost) => {
         const connection = await mysql.createConnection({
           host: shardHost,
@@ -1007,19 +914,10 @@ app.get(
         try {
           const [rows] = await connection.execute(`
             SELECT 
-              so.id,
-              so.order_id,
-              so.seller_id,
-              so.status,
-              so.total_amount,
-              so.is_partial_fulfillment,
-              so.notes,
-              so.accepted_at,
-              so.rejection_reason,
-              so.created_at,
-              soi.product_id,
-              soi.quantity,
-              soi.price
+              so.id, so.order_id, so.seller_id, so.status,
+              so.total_amount, so.is_partial_fulfillment, so.notes,
+              so.accepted_at, so.rejection_reason, so.created_at,
+              soi.product_id, soi.quantity, soi.price
             FROM seller_orders so
             LEFT JOIN seller_order_items soi ON so.id = soi.seller_order_id
             WHERE so.seller_id = ?
@@ -1037,7 +935,6 @@ app.get(
 
       const shardResults = await Promise.all(shardQueries);
 
-      // 3. Merge results from all shards, deduplicating by order ID
       const ordersMap = new Map();
 
       shardResults.forEach(({ rows }) => {
@@ -1074,7 +971,6 @@ app.get(
         });
       });
 
-      // 4. Sort merged results by creation date (newest first)
       const result = Array.from(ordersMap.values())
         .sort((a: any, b: any) => new Date(b._createdAt).getTime() - new Date(a._createdAt).getTime());
 
