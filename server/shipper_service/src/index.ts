@@ -1,8 +1,6 @@
-import cluster from "cluster";
 import express, { Express, NextFunction, Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { availableParallelism } from "os";
 import mysql from 'mysql2/promise';
 import { createClient as RedisClient } from "redis";
 import { GLOBAL_DB_CONFIG } from './utils/index.js';
@@ -22,47 +20,7 @@ declare module "express-serve-static-core" {
 }
 //#endregion
 
-if (cluster.isPrimary) {
-    // Limit workers to prevent OOM
-    const numWorkers = Math.min(availableParallelism(), 4);
-    const restartCount = new Map<number, { count: number; lastRestart: number }>();
-    const MAX_RESTART_ATTEMPTS = 5;
-    const RESTART_WINDOW_MS = 30000;
-    const restartBackoff = (workerId: number) => {
-        const record = restartCount.get(workerId) || { count: 0, lastRestart: 0 };
-        const now = Date.now();
-        if (now - record.lastRestart > RESTART_WINDOW_MS) {
-            record.count = 0;
-        }
-        record.count++;
-        record.lastRestart = now + 1000;
-        restartCount.set(workerId, record);
-        if (record.count > MAX_RESTART_ATTEMPTS) {
-            console.error(`Worker ${workerId} exceeded max restart attempts, not restarting`);
-            return;
-        }
-        setTimeout(() => {
-            const p = cluster.fork();
-            p.on("exit", (code: number | null) => {
-                if (code !== 0) {
-                    setTimeout(() => restartBackoff(p.id), 1000);
-                }
-            });
-        }, 1000);
-    };
-
-    let p;
-    for (let i = 0; i < numWorkers; i++) {
-        p = cluster.fork();
-
-        p.on("exit", (code: number | null) => {
-            if (code !== 0) {
-                setTimeout(() => restartBackoff(p.id), 1000);
-            }
-        });
-    }
-} else {
-    const kafka = new Kafka({
+const kafka = new Kafka({
         clientId: "xv store",
         brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
         retry: {
@@ -410,7 +368,6 @@ if (cluster.isPrimary) {
     //#endregion 
 
 
-    app.listen(process.env.PORT ?? 5004, () =>
-        console.log("Shipper service listening on PORT:" + (process.env.PORT ?? 5004))
-    );
-}
+app.listen(process.env.PORT ?? 5004, () =>
+    console.log("Shipper service listening on PORT:" + (process.env.PORT ?? 5004))
+);
