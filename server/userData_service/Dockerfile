@@ -4,12 +4,14 @@ WORKDIR /app
 
 COPY . .
 
-
 RUN npm install
+
+RUN npm run build
+
 #Creating a non-root user
 RUN addgroup -S userDataGroup && adduser -S userData -G userDataGroup
 
 # change User to userData
 USER userData
 
-CMD ["npm","run","start"]
+CMD ["node", "dist/index.js"]
