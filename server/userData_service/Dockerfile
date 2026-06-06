@@ -4,8 +4,6 @@ WORKDIR /app
 
 COPY . .
 
-RUN apk update && \
-    apk upgrade --no-cache
 
 RUN npm install
 #Creating a non-root user

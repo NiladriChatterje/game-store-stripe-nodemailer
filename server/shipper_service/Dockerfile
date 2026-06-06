@@ -12,9 +12,6 @@ COPY . .
 RUN addgroup -S sudo && \
  adduser -S production -G sudo
 
- RUN apk update \
-     && apk upgrade --no-cache 
-
 RUN npm install
 # change User to production
 USER production

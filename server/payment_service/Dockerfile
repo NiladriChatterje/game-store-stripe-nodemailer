@@ -14,9 +14,6 @@ RUN addgroup -S sudo && \
 
 RUN adduser payment wheel
 
-RUN apk update \
-    && apk upgrade --no-cache 
-
 RUN npm ci --force
 # change User to payment
 EXPOSE 5000
