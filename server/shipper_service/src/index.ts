@@ -8,7 +8,6 @@ import { createClient as RedisClient } from "redis";
 import { sanityConfig } from './utils/index.js';
 import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 import { verifyToken } from "@clerk/backend";
-import { spawn } from 'node:child_process'
 import { JwtPayload } from "@clerk/types";
 
 
@@ -24,25 +23,11 @@ declare module "express-serve-static-core" {
 //#endregion
 
 if (cluster.isPrimary) {
-    let old_child_process: any[] = []
-    setInterval(() => {
-        const child_process = spawn('ping', [
-            `http://localhost:${process.env.PORT}/`,
-        ])
-
-        while (old_child_process.length > 0) {
-            let pop_process = old_child_process.pop()
-            pop_process?.kill(0)
-        }
-
-        child_process.stdout.on('data', buffer => {
-            console.log(buffer.toString('utf-8'))
-            old_child_process.push(child_process)
-        })
-    }, 60000)
+    // Limit workers to prevent OOM
+    const numWorkers = Math.min(availableParallelism(), 4);
 
     let p;
-    for (let i = 0; i < availableParallelism(); i++) {
+    for (let i = 0; i < numWorkers; i++) {
         p = cluster.fork();
 
         p.on("exit", (_statusCode: number) => {
@@ -57,11 +42,6 @@ if (cluster.isPrimary) {
             retries: 2,
         },
         logLevel: logLevel.ERROR,
-        logCreator: (logEntry) => {
-            return ({ namespace, level, label, log }) => {
-                const { message, ...extra } = log;
-            };
-        },
     });
 
     const app: Express = express();
@@ -227,25 +207,20 @@ if (cluster.isPrimary) {
         "/update-order-status",
         verifyClerkToken,
         async (req: Request<{}, {}, { orderId: string; status: string }>, res: Response) => {
+            const producer: Producer = kafka.producer({
+                allowAutoTopicCreation: false,
+                transactionTimeout: 60000,
+            });
             try {
                 const { orderId, status } = req.body;
                 console.log(`<Updating order ${orderId} to status: ${status}>`);
 
                 // Send update to Kafka
-                const producer: Producer = kafka.producer({
-                    allowAutoTopicCreation: false,
-                    transactionTimeout: 60000,
-                });
-
                 await producer.connect();
 
-                const recordMetaData: RecordMetadata[] = await producer.send({
+                await producer.send({
                     topic: "order-status-update-topic",
                     messages: [{ value: JSON.stringify({ orderId, status, updatedAt: new Date().toISOString() }) }],
-                });
-
-                producer.on("producer.network.request_timeout", (ev) => {
-                    res.status(503).json({ error: "Session timeout! Couldn't update order status." });
                 });
 
                 // Invalidate Redis cache
@@ -254,10 +229,11 @@ if (cluster.isPrimary) {
                 }
 
                 res.status(200).json({ message: 'Order status will be updated soon!' });
-                await producer.disconnect();
             } catch (e: Error | any) {
                 console.error('Error updating order status:', e);
                 res.status(500).json({ error: e.message });
+            } finally {
+                await producer.disconnect().catch(() => {});
             }
         }
     );

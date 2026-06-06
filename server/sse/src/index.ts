@@ -16,6 +16,10 @@ app.use(express.json());
 const notificationEmitter1 = new EventEmitter();
 const notificationEmitter2 = new EventEmitter();
 
+// Increase max listeners to avoid memory leak warnings with many SSE connections
+notificationEmitter1.setMaxListeners(100);
+notificationEmitter2.setMaxListeners(100);
+
 // Kafka Setup
 const KAFKA_BROKERS = ["kafka1:9092", "kafka2:9093", "kafka3:9094"];
 
@@ -101,6 +105,29 @@ const initKafka = async () => {
         console.error('[KAFKA] Error in Kafka consumer:', error);
     }
 };
+
+// Graceful shutdown: disconnect Kafka consumer
+process.on('SIGTERM', async () => {
+    console.log('[SSE] SIGTERM received. Shutting down gracefully...');
+    try {
+        await consumer.disconnect();
+        console.log('[SSE] Kafka consumer disconnected.');
+    } catch (e) {
+        console.error('[SSE] Error disconnecting Kafka consumer:', e);
+    }
+    process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+    console.log('[SSE] SIGINT received. Shutting down gracefully...');
+    try {
+        await consumer.disconnect();
+        console.log('[SSE] Kafka consumer disconnected.');
+    } catch (e) {
+        console.error('[SSE] Error disconnecting Kafka consumer:', e);
+    }
+    process.exit(0);
+});
 
 app.listen(PORT, () => {
     console.log(`SSE Server running on http://localhost:${PORT}`);

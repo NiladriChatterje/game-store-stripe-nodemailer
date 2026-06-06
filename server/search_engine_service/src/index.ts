@@ -3,17 +3,12 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { availableParallelism } from "node:os";
 import cluster from "cluster";
-import { spawn } from "node:child_process";
 import { Ollama, OllamaEmbeddings } from "@langchain/ollama";
 import { createClient as redisClient } from "redis";
 
 dotenv.config();
 
 if (cluster.isPrimary) {
-  setInterval(() => {
-    let p = spawn("ping", ["http://localhost:5005/"]);
-    p.kill();
-  }, 60000);
 
   for (let i = 0; i < availableParallelism(); i++) {
     let p = cluster.fork();

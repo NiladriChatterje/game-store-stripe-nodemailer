@@ -10,7 +10,6 @@ import { sanityConfig } from './utils/index.js';
 import { createClient as RedisClient } from 'redis';
 import { verifyToken } from "@clerk/backend";
 import { JwtPayload } from "@clerk/types";
-import { spawn } from "child_process";
 import { Kafka } from "kafkajs";
 
 dotenv.config();
@@ -25,25 +24,11 @@ declare global {
 }
 
 if (cluster.isPrimary) {
-  let old_child_process: any[] = []
-  setInterval(() => {
-    const child_process = spawn('ping', [
-      `http://localhost:${process.env.PORT ?? 5001}/`
-    ])
-
-    while (old_child_process.length > 0) {
-      let pop_process = old_child_process.pop()
-      pop_process?.kill(0)
-    }
-
-    child_process.stdout.on('data', buffer => {
-      console.log(buffer.toString('utf-8'))
-      old_child_process.push(child_process)
-    })
-  }, 60000)
+  // Limit workers and remove zombie ping process
+  const numWorkers = Math.min(availableParallelism(), 4);
 
   let p;
-  for (let i = 0; i < availableParallelism(); i++) {
+  for (let i = 0; i < numWorkers; i++) {
     p = cluster.fork();
 
     p.on("exit", (_statusCode: number) => {
@@ -64,9 +49,10 @@ if (cluster.isPrimary) {
 
 
   try {
-    ; (async () => { await redisClient.connect(); })();
+    await redisClient.connect();
+    console.log("<<redis connected successfully>>");
   } catch (err) {
-    console.log("<<redis connection failed>>");
+    console.log("<<redis connection failed>>", (err as Error)?.message);
   }
 
   const verifyUserToken = async (req: Request, res: Response, next: NextFunction) => {
@@ -119,17 +105,17 @@ if (cluster.isPrimary) {
       const producer = kafka.producer();
       try {
         await producer.connect();
-
-        producer.send({
+        await producer.send({
           topic: 'user-create-topic',
           messages: [{ value: JSON.stringify(req.body) }]
-        })
-        await producer.disconnect();
+        });
+        res.status(201).json({ message: 'User creation queued' });
       } catch (err: Error | any) {
-        console.log("<<error>> :", err.message)
+        console.log("<<error>> :", err.message);
+        res.status(500).json({ error: 'Failed to create user' });
+      } finally {
+        await producer.disconnect().catch(() => {});
       }
-
-      return;
     }
   );
 
@@ -141,9 +127,10 @@ if (cluster.isPrimary) {
       try {
         if (redisClient.isOpen) {
           const redisResult = await redisClient.hGet(`hashSet:user:details`, req.params._id);
-          if (redisClient != null) {
+          // FIXED: was checking `redisClient != null` instead of `redisResult`
+          if (redisResult != null) {
             console.log("<< redis hit - user-found >>");
-            const deserialized = JSON.parse(redisResult as string)
+            const deserialized = JSON.parse(redisResult)
             console.log(deserialized)
             res.json(deserialized)
             return;
@@ -152,10 +139,14 @@ if (cluster.isPrimary) {
         const result = await sanityClient.fetch<UserType>(`*[_type=="user" && _id == $id][0]`, {
           id: req.params._id
         })
-        console.log(result)
+        console.log(result);
+        if (!result) {
+          res.status(404).json({ error: 'User not found' });
+          return;
+        }
         res.json(result)
       } catch (e: Error | any) {
-        res.json({ error: e.message })
+        res.status(500).json({ error: e.message })
       }
 
       return;
@@ -171,9 +162,10 @@ if (cluster.isPrimary) {
       try {
         if (redisClient.isOpen) {
           const redisResult = await redisClient.hGet(`hashSet:user:cart`, req.params._id);
-          if (redisClient != null) {
+          // FIXED: was checking `redisClient != null` instead of `redisResult`
+          if (redisResult != null) {
             console.log("<< redis hit - user-cart >>");
-            const deserialized = JSON.parse(redisResult as string)
+            const deserialized = JSON.parse(redisResult)
             console.log(deserialized)
             res.json(deserialized)
             return;
@@ -182,11 +174,13 @@ if (cluster.isPrimary) {
         const result = await sanityClient.fetch(`*[_type=="user_cart" && user_id == $id][0]`, {
           id: req.params._id
         });
-        await redisClient.hSet(`hashSet:user:cart`, req.params._id, JSON.stringify(result));
+        if (result && redisClient.isOpen) {
+          await redisClient.hSet(`hashSet:user:cart`, req.params._id, JSON.stringify(result));
+        }
         console.log(result)
-        res.json(result)
+        res.json(result || { cart: [] })
       } catch (e: Error | any) {
-        res.json({ error: e.message })
+        res.status(500).json({ error: e.message })
       }
 
       return;
@@ -263,6 +257,10 @@ if (cluster.isPrimary) {
       });
 
       worker.on("message", (data) => { });
+      worker.on("error", (err) => {
+        console.error("UpdateInfo worker error:", err);
+      });
+      res.status(200).json({ message: 'Update queued' });
     }
   );
 
@@ -275,6 +273,9 @@ if (cluster.isPrimary) {
         recipient: req.body?.recipient,
         confirmation: OTP,
       },
+    });
+    worker.on("error", (err) => {
+      console.error("Email worker error:", err);
     });
     res.status(200).send("email sent successfully!")
   });

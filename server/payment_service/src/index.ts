@@ -4,7 +4,6 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import { availableParallelism } from 'os'
 import { Kafka, Producer } from 'kafkajs'
-import { spawn } from 'child_process'
 import { type Subscription } from '@declaration/index'
 import { verifyToken } from '@clerk/backend'
 import nodemailer from 'nodemailer';
@@ -22,26 +21,11 @@ declare global {
 }
 
 if (cluster.isPrimary) {
-    let old_child_process: any[] = []
-    setInterval(() => {
-        const child_process = spawn('ping', [
-            `http://localhost:${process.env.PORT ?? 5000}/`,
-        ])
+    // Limit cluster forks to prevent OOM on resource-constrained systems
+    const numWorkers = Math.min(availableParallelism(), 4);
 
-        while (old_child_process.length > 0) {
-            let pop_process = old_child_process.pop()
-            pop_process?.kill(0)
-        }
-
-        child_process.stdout.on('data', buffer => {
-            console.log(buffer.toString('utf-8'))
-            old_child_process.push(child_process)
-        })
-    }, 60000)
-
-    let p
-    for (let i = 0; i < availableParallelism(); i++) {
-        p = cluster.fork()
+    for (let i = 0; i < numWorkers; i++) {
+        let p = cluster.fork()
         p.on('exit', (_statusCode: number) => {
             p = cluster.fork()
         })
@@ -61,7 +45,8 @@ if (cluster.isPrimary) {
         },
     });
 
-    const { sendMail } = transport;
+    // Reuse a single transport instance; no need to destructure sendMail
+    const sendMailAsync = transport.sendMail.bind(transport);
 
     const verifyClerkToken = async (req: Request<{}, {}, any>, res: Response, next: NextFunction) => {
         try {
@@ -132,9 +117,9 @@ if (cluster.isPrimary) {
     app.post('/seller-subscription',
         verifyClerkToken,
         async (req: Request<{}, {}, { _id: string, subscriptionPlan: Subscription }>, res: Response) => {
+            const producer: Producer = kafka.producer();
             try {
                 const { _id, subscriptionPlan } = req.body;
-                const producer: Producer = kafka.producer();
                 await producer.connect();
                 await producer.send(
                     {
@@ -143,11 +128,12 @@ if (cluster.isPrimary) {
                     }
                 );
                 console.log("<< Subscription added to kafka >>")
-                await producer.disconnect()
                 res.status(201).send('new subscription added.');
             } catch (err) {
                 console.log(err);
                 res.status(501).send('issue');
+            } finally {
+                await producer.disconnect().catch(() => {});
             }
         })
 
@@ -166,18 +152,27 @@ if (cluster.isPrimary) {
             pincode: number;
             quantity: number;
         }>, res: Response, next: NextFunction) => {
-            const userId = req.headers['x-user-id'];
-
             const producer = kafka.producer();
-            await producer.connect();
-            producer.send({
-                topic: 'update-product-quantity-topic',
-                messages: [{ value: JSON.stringify(req.body) }]
-            });
+            try {
+                await producer.connect();
+                await producer.send({
+                    topic: 'update-product-quantity-topic',
+                    messages: [{ value: JSON.stringify(req.body) }]
+                });
 
-            sendMail({
-                to: req.body.customerEmail
-            })
+                await sendMailAsync({
+                    to: req.body.customerEmail,
+                    subject: 'Order Confirmation',
+                    html: '<p>Your order has been placed successfully!</p>'
+                });
+
+                res.status(200).json({ message: 'Order placed and email sent' });
+            } catch (err) {
+                console.error('Error processing order:', err);
+                res.status(500).json({ error: 'Failed to process order' });
+            } finally {
+                await producer.disconnect().catch(() => {});
+            }
         });
 
     // ✅ REFUND ENDPOINT - Process refunds for partial/failed orders
@@ -228,7 +223,7 @@ if (cluster.isPrimary) {
                     });
 
                     // Send refund confirmation email
-                    await sendMail({
+                    await sendMailAsync({
                         to: customerEmail,
                         subject: `Refund Processed for Order ${orderId}`,
                         html: `
@@ -297,6 +292,6 @@ if (cluster.isPrimary) {
 
 
     app.listen(process.env.PORT ?? 5000, () =>
-        console.log('listening on PORT:' + process.env.PORT),
+        console.log('listening on PORT:' + process.env.PORT??5000),
     )
 }

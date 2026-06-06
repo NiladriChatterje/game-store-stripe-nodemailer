@@ -11,7 +11,6 @@ import { sanityConfig } from './utils/index.js';
 import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 import { createTransport } from "nodemailer";
 import { ClerkClient, verifyToken } from "@clerk/backend";
-import { spawn } from 'node:child_process'
 import { JwtPayload } from "@clerk/types";
 import mysql from 'mysql2/promise';
 import { ShardHelper } from './utils/ShardHelper.js';
@@ -29,26 +28,11 @@ declare module "express-serve-static-core" {
 //#endregion
 
 if (cluster.isPrimary) {
-  let old_child_process: any[] = []
-  setInterval(() => {
-    const child_process = spawn('ping', [
-      `http://localhost:${process.env.PORT}/`,
-    ])
+  // Limit workers to prevent OOM
+  const numWorkers = Math.min(availableParallelism(), 4);
 
-    while (old_child_process.length > 0) {
-      let pop_process = old_child_process.pop()
-      pop_process?.kill(0)
-    }
-
-    child_process.stdout.on('data', buffer => {
-      console.log(buffer.toString('utf-8'))
-      old_child_process.push(child_process)
-    })
-  }, 60000)
-
-  let p;
-  for (let i = 0; i < availableParallelism(); i++) {
-    p = cluster.fork();
+  for (let i = 0; i < numWorkers; i++) {
+    let p = cluster.fork();
 
     p.on("exit", (_statusCode: number) => {
       p = cluster.fork();
@@ -70,12 +54,6 @@ if (cluster.isPrimary) {
       retries: 2,
     },
     logLevel: logLevel.ERROR,
-    logCreator: (logEntry) => {
-      return ({ namespace, level, label, log }) => {
-        const { message, ...extra } = log;
-
-      };
-    },
   });
   const app: Express = express();
   const sanityClient: SanityClient = createClient(sanityConfig);
@@ -181,12 +159,13 @@ if (cluster.isPrimary) {
         console.log("Message sent successfully. Metadata:", recordMetaData);
 
         res.status(201).send('Account will be created soon!')
-        await producer.disconnect();
-        console.log("Kafka producer disconnected.");
       }
       catch (err: any) {
         console.error("Error in admin creation endpoint: ", err);
         res.status(500).json({ error: "Internal server error!", details: err.message });
+      } finally {
+        await producer!.disconnect().catch(() => {});
+        console.log("Kafka producer disconnected.");
       }
     }
   );
@@ -241,41 +220,44 @@ if (cluster.isPrimary) {
                 database: 'xvstore'
               });
 
-              // Fetch subscriptions
-              const [subRows] = await connection.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
-              if (Array.isArray(subRows) && subRows.length > 0) {
-                adminData.subscriptionPlan = subRows.map((sub: any) => ({
-                  _key: sub.id,
-                  transactionId: sub.transaction_id,
-                  amount: sub.amount,
-                  storeAllotment: sub.store_allotment ?? 1,
-                  planSchemaList: {
-                    activeDate: sub.plan_active_date,
-                    expireDate: sub.plan_expire_date
-                  }
-                }));
-                isPlanActive = checkSubscriptionValidity(adminData);
-              }
-
-              // Fetch configured stores for this seller (try seller_stores, fall back to store)
               try {
-                const [storeRows] = await connection.execute(
-                  'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
-                  [req.params._id]
-                );
-                if (Array.isArray(storeRows)) {
-                  adminData.stores = storeRows;
+                // Fetch subscriptions
+                const [subRows] = await connection.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
+                if (Array.isArray(subRows) && subRows.length > 0) {
+                  adminData.subscriptionPlan = subRows.map((sub: any) => ({
+                    _key: sub.id,
+                    transactionId: sub.transaction_id,
+                    amount: sub.amount,
+                    storeAllotment: sub.store_allotment ?? 1,
+                    planSchemaList: {
+                      activeDate: sub.plan_active_date,
+                      expireDate: sub.plan_expire_date
+                    }
+                  }));
+                  isPlanActive = checkSubscriptionValidity(adminData);
                 }
-              } catch (e: any) {
-                const [storeRows] = await connection.execute(
-                  'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
-                  [req.params._id]
-                );
-                if (Array.isArray(storeRows)) {
-                  adminData.stores = storeRows;
+
+                // Fetch configured stores for this seller (try seller_stores, fall back to store)
+                try {
+                  const [storeRows] = await connection.execute(
+                    'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+                    [req.params._id]
+                  );
+                  if (Array.isArray(storeRows)) {
+                    adminData.stores = storeRows;
+                  }
+                } catch (e: any) {
+                  const [storeRows] = await connection.execute(
+                    'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+                    [req.params._id]
+                  );
+                  if (Array.isArray(storeRows)) {
+                    adminData.stores = storeRows;
+                  }
                 }
+              } finally {
+                await connection.end();
               }
-              await connection.end();
             }
             res.json({ ...adminData, isPlanActive });
             return;
@@ -289,84 +271,89 @@ if (cluster.isPrimary) {
           database: 'xvstore'
         });
         console.log("<<Connection successfull>>");
-        const [rows] = await connection.execute('SELECT * FROM sellers WHERE id = ?', [req.params._id]);
-        console.log("<MySQL admin data from sql> : ", rows);
-        let result: any = null;
-        if (Array.isArray(rows) && rows.length > 0) {
-          const row = rows[0] as any;
-          result = {
-            _id: row.id,
-            _type: 'admin',
-            username: row.username,
-            email: row.email,
-            phone: row.phone,
-            geoPoint: {
-              lat: row.geo_lat,
-              lng: row.geo_lng
-            },
-            address: {
-              pincode: row.address_pincode,
-              county: row.address_county,
-              state: row.address_state,
-              country: row.address_country
-            },
-            subscriptionPlan: []
-          };
+        try {
+          const [rows] = await connection.execute('SELECT * FROM sellers WHERE id = ?', [req.params._id]);
+          console.log("<MySQL admin data from sql> : ", rows);
+          let result: any = null;
+          if (Array.isArray(rows) && rows.length > 0) {
+            const row = rows[0] as any;
+            result = {
+              _id: row.id,
+              _type: 'admin',
+              username: row.username,
+              email: row.email,
+              phone: row.phone,
+              geoPoint: {
+                lat: row.geo_lat,
+                lng: row.geo_lng
+              },
+              address: {
+                pincode: row.address_pincode,
+                county: row.address_county,
+                state: row.address_state,
+                country: row.address_country
+              },
+              subscriptionPlan: []
+            };
 
-          // Fetch subscriptions
-          const [subRows] = await connection.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
+            // Fetch subscriptions
+            const [subRows] = await connection.execute('SELECT * FROM seller_subscriptions WHERE seller_id = ?', [req.params._id]);
 
-          if (Array.isArray(subRows) && subRows.length > 0) {
-            result.subscriptionPlan = subRows.map((sub: any) => ({
-              _key: sub.id,
-              transactionId: sub.transaction_id,
-              amount: sub.amount,
-              storeAllotment: sub.store_allotment ?? 1,
-              planSchemaList: {
-                activeDate: sub.plan_active_date,
-                expireDate: sub.plan_expire_date
+            if (Array.isArray(subRows) && subRows.length > 0) {
+              result.subscriptionPlan = subRows.map((sub: any) => ({
+                _key: sub.id,
+                transactionId: sub.transaction_id,
+                amount: sub.amount,
+                storeAllotment: sub.store_allotment ?? 1,
+                planSchemaList: {
+                  activeDate: sub.plan_active_date,
+                  expireDate: sub.plan_expire_date
+                }
+              }));
+            }
+
+            // Fetch configured stores for this seller (try seller_stores, fall back to store)
+            try {
+              const [storeRows] = await connection.execute(
+                'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+                [req.params._id]
+              );
+              if (Array.isArray(storeRows)) {
+                result.stores = storeRows;
               }
-            }));
-          }
-
-          // Fetch configured stores for this seller (try seller_stores, fall back to store)
-          try {
-            const [storeRows] = await connection.execute(
-              'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
-              [req.params._id]
-            );
-            if (Array.isArray(storeRows)) {
-              result.stores = storeRows;
-            }
-          } catch (e: any) {
-            const [storeRows] = await connection.execute(
-              'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
-              [req.params._id]
-            );
-            if (Array.isArray(storeRows)) {
-              result.stores = storeRows;
+            } catch (e: any) {
+              const [storeRows] = await connection.execute(
+                'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+                [req.params._id]
+              );
+              if (Array.isArray(storeRows)) {
+                result.stores = storeRows;
+              }
             }
           }
-        }
-        await connection.end();
 
-        console.log("<admin-record-fetched from MySQL>: ", result)
+          console.log("<admin-record-fetched from MySQL>: ", result)
 
-        // Check subscription validity
-        const isPlanActive = checkSubscriptionValidity(result);
+          // Check subscription validity
+          const isPlanActive = checkSubscriptionValidity(result);
 
-        if (!result) {
-          res.status(404).json({ error: "Admin not found" });
+          if (!result) {
+            res.status(404).json({ error: "Admin not found" });
+            return;
+          }
+          const responseData = { ...result, isPlanActive };
+          res.status(200).json(responseData);
+
+          if (req.params._id.length > 0) {
+            await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(responseData));
+            await redisClient.sAdd("set:admin:id", req.params._id)
+          }
           return;
+        } catch (e: Error | any) {
+          res.status(500).json({ error: e.message });
+        } finally {
+          await connection.end();
         }
-        const responseData = { ...result, isPlanActive };
-        res.status(200).json(responseData);
-
-        if (req.params._id.length > 0) {
-          await redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(responseData));
-          await redisClient.sAdd("set:admin:id", req.params._id)
-        }
-        return;
       } catch (e: Error | any) {
         res.status(500).json({ error: e.message });
       }
@@ -399,61 +386,63 @@ if (cluster.isPrimary) {
           database: 'xvstore'
         });
 
-        // Check how many stores are allotted vs how many are configured
-        const [subRows]: any = await connection.execute(
-          'SELECT MAX(store_allotment) as max_allotment FROM seller_subscriptions WHERE seller_id = ?',
-          [sellerId]
-        );
-        const maxAllotment: number = subRows[0]?.max_allotment ?? 1;
-
-        const [existingRows]: any = await connection.execute(
-          'SELECT COUNT(*) as count FROM store WHERE seller_id = ?',
-          [sellerId]
-        );
-        const existingCount: number = existingRows[0]?.count ?? 0;
-
-        if (existingCount >= maxAllotment) {
-          await connection.end();
-          res.status(403).json({ error: `Store limit of ${maxAllotment} reached for your subscription plan.` });
-          return;
-        }
-
-        const [pincodeCheck]: any = await connection.execute(
-          'SELECT COUNT(*) as count FROM store WHERE pincode = ?',
-          [pincode]
-        );
-
-        if (pincodeCheck[0]?.count > 0) {
-          await connection.end();
-          res.status(403).json({ error: `Store with pincode ${pincode} is already present in the store table.` });
-          return;
-        }
-
-        await connection.execute(
-          'INSERT INTO store (id, seller_id, pincode, county, state, country) VALUES (?, ?, ?, ?, ?, ?)',
-          [Number(pincode), sellerId, pincode, county, state, country]
-        );
-
-        // Also insert into seller_stores with pre-computed shard_host (best-effort)
         try {
-          const shardHost = ShardHelper.getShardHost(pincode);
-          const nextStoreNumber = existingCount + 1;
-          await connection.execute(
-            'INSERT INTO seller_stores (seller_id, store_number, pincode, shard_host, county, state, country) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [sellerId, nextStoreNumber, pincode, shardHost, county, state, country]
+          // Check how many stores are allotted vs how many are configured
+          const [subRows]: any = await connection.execute(
+            'SELECT MAX(store_allotment) as max_allotment FROM seller_subscriptions WHERE seller_id = ?',
+            [sellerId]
           );
-        } catch (e: any) {
-          console.log(`seller_stores insert skipped (table may not exist): ${e.message}`);
+          const maxAllotment: number = subRows[0]?.max_allotment ?? 1;
+
+          const [existingRows]: any = await connection.execute(
+            'SELECT COUNT(*) as count FROM store WHERE seller_id = ?',
+            [sellerId]
+          );
+          const existingCount: number = existingRows[0]?.count ?? 0;
+
+          if (existingCount >= maxAllotment) {
+            res.status(403).json({ error: `Store limit of ${maxAllotment} reached for your subscription plan.` });
+            return;
+          }
+
+          const [pincodeCheck]: any = await connection.execute(
+            'SELECT COUNT(*) as count FROM store WHERE pincode = ?',
+            [pincode]
+          );
+
+          if (pincodeCheck[0]?.count > 0) {
+            res.status(403).json({ error: `Store with pincode ${pincode} is already present in the store table.` });
+            return;
+          }
+
+          await connection.execute(
+            'INSERT INTO store (id, seller_id, pincode, county, state, country) VALUES (?, ?, ?, ?, ?, ?)',
+            [Number(pincode), sellerId, pincode, county, state, country]
+          );
+
+          // Also insert into seller_stores with pre-computed shard_host (best-effort)
+          try {
+            const shardHost = ShardHelper.getShardHost(pincode);
+            const nextStoreNumber = existingCount + 1;
+            await connection.execute(
+              'INSERT INTO seller_stores (seller_id, store_number, pincode, shard_host, county, state, country) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [sellerId, nextStoreNumber, pincode, shardHost, county, state, country]
+            );
+          } catch (e: any) {
+            console.log(`seller_stores insert skipped (table may not exist): ${e.message}`);
+          }
+
+          // Invalidate Redis admin cache so next fetch includes updated stores
+          if (redisClient.isOpen) {
+            await redisClient.hDel("hashSet:admin:details", sellerId);
+          }
+
+          res.status(201).json({ message: "Store configured successfully", storeId: Number(storeId), maxAllotment, existingCount: Math.min(maxAllotment, existingCount + 1) });
+        } catch (e: Error | any) {
+          res.status(500).json({ error: e.message });
+        } finally {
+          await connection.end();
         }
-
-        await connection.end();
-
-        // Invalidate Redis admin cache so next fetch includes updated stores
-        if (redisClient.isOpen) {
-          await redisClient.hDel("hashSet:admin:details", sellerId);
-        }
-
-        res.status(201).json({ message: "Store configured successfully", storeId: Number(storeId), maxAllotment, existingCount: Math.min(maxAllotment, existingCount + 1) });
       } catch (e: Error | any) {
         res.status(500).json({ error: e.message });
       }
@@ -490,13 +479,20 @@ if (cluster.isPrimary) {
     async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
       const adminPayload: AdminFieldsType = req.body;
       const producer = kafka.producer();
-      await producer.connect();
+      try {
+        await producer.connect();
 
-      producer.send({
-        topic: "admin-update-topic",
-        messages: [{ value: JSON.stringify(adminPayload) }],
-      });
-      await producer.disconnect();
+        await producer.send({
+          topic: "admin-update-topic",
+          messages: [{ value: JSON.stringify(adminPayload) }],
+        });
+        res.status(200).json({ message: 'Update queued' });
+      } catch (err) {
+        console.error('Error updating admin info:', err);
+        res.status(500).json({ error: 'Failed to update admin' });
+      } finally {
+        await producer.disconnect().catch(() => {});
+      }
     }
   );
 
@@ -506,9 +502,7 @@ if (cluster.isPrimary) {
     verifyClerkToken,
     async (req: Request<{ _id: string }>, res: Response) => {
       try {
-        if (redisClient.isOpen) {
-          const resultFromRedis = await redisClient.lRange(`productList:admin:${req.params._id}`, 0, -1);
-        }
+        // FIXED: resultFromRedis was fetched but never used - removed to avoid wasted memory
         const sanityClient: SanityClient = createClient(sanityConfig);
         const result = await sanityClient.fetch(
           `*[_type=="admin" && _id==$admin_id]{productReferenceAfterListing}`, {
@@ -547,14 +541,14 @@ if (cluster.isPrimary) {
         const dateFilter = (fromDate && toDate) ? { from: fromDate, to: toDate } : null;
 
         const shardMetricPromises = sellerShards.map(async (shardHost) => {
-          try {
-            const conn = await mysql.createConnection({
-              host: shardHost,
-              port: 3306,
-              user: 'root',
-              database: 'xvstore'
-            });
+          const conn = await mysql.createConnection({
+            host: shardHost,
+            port: 3306,
+            user: 'root',
+            database: 'xvstore'
+          });
 
+          try {
             // Total Sales & Products Sold
             const [salesRows]: any = await conn.execute(`
               SELECT 
@@ -618,8 +612,6 @@ if (cluster.isPrimary) {
               [adminId]
             );
 
-            await conn.end();
-
             return {
               totalSales: Number(salesRows[0]?.totalSales || 0),
               productsSold: Number(salesRows[0]?.productsSold || 0),
@@ -636,6 +628,8 @@ if (cluster.isPrimary) {
               activeCustomers: 0, monthlyRevenue: 0, totalProductsInInventory: 0,
               timeSeriesRows: []
             };
+          } finally {
+            await conn.end();
           }
         });
 
@@ -796,14 +790,14 @@ if (cluster.isPrimary) {
         // 4. Query each target shard in parallel
         const shardQueries = targetShards.map(async ({ shardHost, pincodes }) => {
           const shardIndex = parseInt(shardHost.replace('mysql', '')) - 1;
-          try {
-            const connection = await mysql.createConnection({
-              host: shardHost,
-              port: 3306,
-              user: 'root',
-              database: 'xvstore'
-            });
+          const connection = await mysql.createConnection({
+            host: shardHost,
+            port: 3306,
+            user: 'root',
+            database: 'xvstore'
+          });
 
+          try {
             let rows: any[];
             if (pincodes.length > 0) {
               // Pincode-based: query only products in this store's pincodes
@@ -874,11 +868,12 @@ if (cluster.isPrimary) {
               ) as any);
             }
 
-            await connection.end();
             return { shardHost, shardIndex, rows, imageRows: imageRows as any[], keywordRows: keywordRows as any[] };
           } catch (err) {
             console.error(`Product fetch failed on ${shardHost}:`, err);
             return { shardHost, shardIndex, rows: [], imageRows: [], keywordRows: [] };
+          } finally {
+            await connection.end();
           }
         });
 
@@ -1016,14 +1011,14 @@ if (cluster.isPrimary) {
 
         // 2. Query ALL shards in parallel
         const shardQueries = sellerShards.map(async (shardHost) => {
-          try {
-            const connection = await mysql.createConnection({
-              host: shardHost,
-              port: 3306,
-              user: 'root',
-              database: 'xvstore'
-            });
+          const connection = await mysql.createConnection({
+            host: shardHost,
+            port: 3306,
+            user: 'root',
+            database: 'xvstore'
+          });
 
+          try {
             const [rows] = await connection.execute(`
               SELECT 
                 so.id,
@@ -1045,11 +1040,12 @@ if (cluster.isPrimary) {
               ORDER BY so.created_at DESC
             `, [sellerId]);
 
-            await connection.end();
             return { shardHost, rows: rows as any[] };
           } catch (err) {
             console.error(`Order fetch failed on ${shardHost}:`, err);
             return { shardHost, rows: [] };
+          } finally {
+            await connection.end();
           }
         });
 
@@ -1113,6 +1109,9 @@ if (cluster.isPrimary) {
         confirmation: OTP,
       },
     });
+    worker.on("error", (err) => {
+      console.error("Email worker error:", err);
+    });
     res.status(200).send("email sent successfully!")
   });
 
@@ -1123,6 +1122,9 @@ if (cluster.isPrimary) {
         recipient: req.body?.phone,
         confirmation: OTP,
       },
+    });
+    worker.on("error", (err) => {
+      console.error("SMS worker error:", err);
     });
 
     res.send("SMS sent");

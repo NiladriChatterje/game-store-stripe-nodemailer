@@ -6,7 +6,6 @@ import dotenv from "dotenv";
 import { availableParallelism } from "os";
 import type { ProductType } from "@declaration/index.d.ts";
 import { createClient as RedisClient, RedisClientType } from "redis";
-import { spawn } from "child_process";
 import { Kafka, RecordMetadata } from "kafkajs";
 import { JwtPayload } from "@clerk/types";
 import { verifyToken } from "@clerk/backend";
@@ -43,27 +42,8 @@ declare global {
 
 
 if (cluster.isPrimary) {
-
-  let old_child_process: any[] = []
-  setInterval(() => {
-    const child_process = spawn('ping', [
-      `http://product_service:${process.env.PORT}/`,
-    ])
-
-    while (old_child_process.length > 0) {
-      let pop_process = old_child_process.pop()
-      pop_process?.kill(0)
-    }
-
-    child_process.stdout.on('data', buffer => {
-      console.log(buffer.toString('utf-8'))
-      old_child_process.push(child_process)
-    })
-  }, 60000)
-
-  let p;
   for (let i = 0; i < availableParallelism(); i++) {
-    p = cluster.fork();
+    let p = cluster.fork();
     p.on("exit", (_statusCode: number) => {
       p = cluster.fork();
     });
