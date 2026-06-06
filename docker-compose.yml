@@ -3,25 +3,21 @@ services:
     image: confluentinc/cp-zookeeper:7.3.2
     hostname: zoo1
     container_name: zoo1
-    restart: always
+    restart: on-failure
     ports:
       - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_SERVER_ID: 1
       ZOOKEEPER_SERVERS: zoo1:2888:3888
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   kafka1:
     image: confluentinc/cp-kafka:7.3.2
     hostname: kafka1
     container_name: kafka1
-    restart: always
+    restart: on-failure
     ports:
       - "9092:9092"
       - "9095:9095"
@@ -37,20 +33,17 @@ services:
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_HEAP_OPTS: "-Xmx256M -Xms128M"
     depends_on:
       - zoo1
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 1.0
 
   kafka2:
     image: confluentinc/cp-kafka:7.3.2
     hostname: kafka2
     container_name: kafka2
-    restart: always
+    restart: on-failure
     ports:
       - "9093:9093"
       - "9096:9096"
@@ -66,20 +59,17 @@ services:
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_HEAP_OPTS: "-Xmx256M -Xms128M"
     depends_on:
       - zoo1
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 1.0
 
   kafka3:
     image: confluentinc/cp-kafka:7.3.2
     hostname: kafka3
     container_name: kafka3
-    restart: always
+    restart: on-failure
     ports:
       - "9094:9094"
       - "9097:9097"
@@ -95,14 +85,11 @@ services:
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_HEAP_OPTS: "-Xmx256M -Xms128M"
     depends_on:
       - zoo1
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 1.0
 
   mysql1:
     image: mysql:9.6.0
@@ -120,12 +107,8 @@ services:
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 0.5
 
   mysql2:
     image: mysql:9.6.0
@@ -143,12 +126,8 @@ services:
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 0.5
 
   mysql3:
     image: mysql:9.6.0
@@ -166,12 +145,8 @@ services:
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 0.5
 
   mysql4:
     image: mysql:9.6.0
@@ -189,12 +164,8 @@ services:
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 0.5
 
   mysql5:
     image: mysql:9.6.0
@@ -212,12 +183,8 @@ services:
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 0.5
 
   global_sql_data:
     image: mysql:9.6.0
@@ -235,12 +202,8 @@ services:
       - ./store/sellers.sql:/docker-entrypoint-initdb.d/02_sellers.sql
       - ./store/shippers.sql:/docker-entrypoint-initdb.d/03_shippers.sql
       - ./store/cart.sql:/docker-entrypoint-initdb.d/04_cart.sql
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 0.5
 
   redis_storage:
     image: redis
@@ -249,12 +212,8 @@ services:
     restart: always
     ports:
       - "6379:6379"
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   redis_vector_db:
     image: redis/redis-stack-server:latest
@@ -263,12 +222,8 @@ services:
     restart: always
     ports:
       - "6381:6379"
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 0.5
 
   # redis_location:
   #   image: redis
@@ -284,11 +239,10 @@ services:
       dockerfile: Dockerfile
     hostname: seller_service
     container_name: seller_service
-    restart: always
+    restart: on-failure
     volumes:
       - ./server/seller_service:/app
       - /app/node_modules
-      # - ./server/seller_service/node_modules:/app/node_modules
     ports:
       - "5003:5003"
     depends_on:
@@ -297,12 +251,8 @@ services:
       - kafka3
       - redis_storage
       - global_sql_data
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   userdata_service:
     build:
@@ -310,11 +260,10 @@ services:
       dockerfile: Dockerfile
     hostname: userData_service
     container_name: userData_service
-    restart: always
+    restart: on-failure
     volumes:
       - ./server/userData_service:/app
       - /app/node_modules
-      # - ./server/userData_service/node_modules:/app/node_modules
     ports:
       - "5001:5001"
     depends_on:
@@ -323,12 +272,8 @@ services:
       - kafka3
       - redis_storage
       - global_sql_data
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   payment_service:
     build:
@@ -336,11 +281,10 @@ services:
       dockerfile: Dockerfile
     hostname: payment_service
     container_name: payment_service
-    restart: always
+    restart: on-failure
     volumes:
       - ./server/payment_service:/app
       - /app/node_modules
-      # - ./server/payment_service/node_modules:/app/node_modules
     ports:
       - "5000:5000"
     depends_on:
@@ -348,12 +292,8 @@ services:
       - kafka2
       - kafka3
       - redis_storage
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   product_service:
     build:
@@ -361,11 +301,10 @@ services:
       dockerfile: Dockerfile
     hostname: product_service
     container_name: product_service
-    restart: always
+    restart: on-failure
     volumes:
       - ./server/product_service:/app
       - /app/node_modules
-      # - ./server/product_service/node_modules:/app/node_modules
     ports:
       - "5002:5002"
     depends_on:
@@ -373,12 +312,8 @@ services:
       - kafka2
       - kafka3
       - redis_storage
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   search_engine_service:
     build:
@@ -386,11 +321,10 @@ services:
       dockerfile: Dockerfile
     hostname: search_engine_service
     container_name: search_engine_service
-    restart: always
+    restart: on-failure
     volumes:
       - ./server/search_engine_service:/app
       - /app/node_modules
-      # - ./server/search_engine_service/node_modules:/app/node_modules
     ports:
       - "5005:5005"
     depends_on:
@@ -399,12 +333,8 @@ services:
       - kafka3
       - redis_storage
       - redis_vector_db
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   shipper_service:
     build:
@@ -412,11 +342,10 @@ services:
       dockerfile: Dockerfile
     hostname: shipper_service
     container_name: shipper_service
-    restart: always
+    restart: on-failure
     volumes:
       - ./server/shipper_service:/app
       - /app/node_modules
-      # - ./server/shipper_service/node_modules:/app/node_modules
     ports:
       - "5004:5004"
     depends_on:
@@ -425,19 +354,15 @@ services:
       - kafka3
       - redis_storage
       - global_sql_data
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   kafka-consumers:
     container_name: kafka-consumers
     build:
       context: ./kafka-consumers
       dockerfile: Dockerfile
-    restart: always
+    restart: on-failure
     volumes:
       - ./kafka-consumers:/app
       - /app/node_modules
@@ -452,12 +377,8 @@ services:
       - mysql3
       - mysql4
       - mysql5
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 1.0
 
   sse_service:
     build:
@@ -465,7 +386,7 @@ services:
       dockerfile: Dockerfile
     hostname: sse_service
     container_name: sse_service
-    restart: always
+    restart: on-failure
     volumes:
       - ./server/sse:/app
       - /app/node_modules
@@ -479,12 +400,8 @@ services:
       - kafka2
       - kafka3
       - redis_storage
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    mem_limit: 256m
+    cpus: 0.5
 
   # embedding_sync_job:
   #   build:
@@ -498,12 +415,8 @@ services:
   #     - mysql3
   #     - mysql4
   #     - redis_vector_db
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 256M
-  #       reservations:
-  #         memory: 128M
+  #   mem_limit: 512m
+  #   cpus: 1.0
 
   # Dedicated PM2 service using the kafka-consumers image to run PM2-managed processes
   pm2:
@@ -512,12 +425,11 @@ services:
       dockerfile: Dockerfile
     container_name: pm2
     hostname: pm2
-    restart: always
+    restart: on-failure
     working_dir: /app
     volumes:
       - ./kafka-consumers:/app
       - /app/node_modules
-    # Use the npm start script which sets up the PATH for the local pm2 binary
     command: [ "npm", "run", "start" ]
     depends_on:
       - kafka1
@@ -530,12 +442,8 @@ services:
       - mysql3
       - mysql4
       - mysql5
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+    mem_limit: 512m
+    cpus: 1.0
 
 volumes:
   mysql1_data:

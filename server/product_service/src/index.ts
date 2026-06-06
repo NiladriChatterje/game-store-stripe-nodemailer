@@ -16,19 +16,21 @@ import { ShardHelper } from './utils/ShardHelper.ts';
 dotenv.config();
 
 // MySQL Connection Pools for Shards
+// Reduced from 10 to 2 per pool to prevent 200+ simultaneous connections
+// on startup which causes CPU contention across all workers
 const shardPools = PRODUCT_SHARDS_CONFIG.map((config: any) => mysql.createPool({
   ...config,
   waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+  connectionLimit: 2,
+  queueLimit: 10
 }));
 
 // Global DB Pool
 const globalPool = mysql.createPool({
   ...GLOBAL_DB_CONFIG,
   waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+  connectionLimit: 2,
+  queueLimit: 10
 });
 
 declare global {
