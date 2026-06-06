@@ -30,12 +30,38 @@ declare module "express-serve-static-core" {
 if (cluster.isPrimary) {
   // Limit workers to prevent OOM
   const numWorkers = Math.min(availableParallelism(), 4);
+  const restartCount = new Map<number, { count: number; lastRestart: number }>();
+  const MAX_RESTART_ATTEMPTS = 5;
+  const RESTART_WINDOW_MS = 30000;
+  const restartBackoff = (workerId: number) => {
+    const record = restartCount.get(workerId) || { count: 0, lastRestart: 0 };
+    const now = Date.now();
+    if (now - record.lastRestart > RESTART_WINDOW_MS) {
+      record.count = 0;
+    }
+    record.count++;
+    record.lastRestart = now + 1000;
+    restartCount.set(workerId, record);
+    if (record.count > MAX_RESTART_ATTEMPTS) {
+      console.error(`Worker ${workerId} exceeded max restart attempts, not restarting`);
+      return;
+    }
+    setTimeout(() => {
+      const p = cluster.fork();
+      p.on("exit", (code: number | null) => {
+        if (code !== 0) {
+          setTimeout(() => restartBackoff(p.id), 1000);
+        }
+      });
+    }, 1000);
+  };
 
   for (let i = 0; i < numWorkers; i++) {
-    let p = cluster.fork();
-
-    p.on("exit", (_statusCode: number) => {
-      p = cluster.fork();
+    const p = cluster.fork();
+    p.on("exit", (code: number | null) => {
+      if (code !== 0) {
+        setTimeout(() => restartBackoff(p.id), 1000);
+      }
     });
   }
 } else {
