@@ -3,9 +3,9 @@ import express, { Express, NextFunction, Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { availableParallelism } from "os";
-import { createClient, SanityClient } from '@sanity/client'
+import mysql from 'mysql2/promise';
 import { createClient as RedisClient } from "redis";
-import { sanityConfig } from './utils/index.js';
+import { GLOBAL_DB_CONFIG } from './utils/index.js';
 import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 import { verifyToken } from "@clerk/backend";
 import { JwtPayload } from "@clerk/types";
@@ -45,7 +45,15 @@ if (cluster.isPrimary) {
     });
 
     const app: Express = express();
-    const sanityClient: SanityClient = createClient(sanityConfig);
+
+    // MySQL Global DB Pool
+    const globalPool = mysql.createPool({
+        ...GLOBAL_DB_CONFIG,
+        waitForConnections: true,
+        connectionLimit: 2,
+        queueLimit: 10
+    });
+
     const redisClient = RedisClient({
         url: 'redis://redis_storage:6379'
     });
@@ -98,7 +106,7 @@ if (cluster.isPrimary) {
         res.end("Shipper service is running!");
     });
 
-    //fetch user orders for shipper
+    //fetch user order by orderId
     app.get(
         "/fetch-user-order/:orderId",
         verifyClerkToken,
@@ -117,43 +125,78 @@ if (cluster.isPrimary) {
                     }
                 }
 
-                // Fetch from Sanity if not in cache
-                const order = await sanityClient.fetch(
-                    `*[_type=='order' && orderId==$orderId][0]{
-            _id,
-            orderId,
-            customer->{
-              _id,
-              username,
-              email,
-              phone,
-              geoPoint,
-              address
-            },
-            product,
-            quantity,
-            transactionId,
-            paymentSignature,
-            amount,
-            status,
-            createdAt,
-            expectedDelivery
-          }`,
-                    { orderId }
+                // Fetch from MySQL global DB
+                const [orderRows] = await globalPool.execute(
+                    `SELECT 
+                        o.id,
+                        o.order_id_display AS orderId,
+                        o.customer_id,
+                        o.shipper_id,
+                        o.quantity,
+                        o.transaction_id AS transactionId,
+                        o.payment_signature AS paymentSignature,
+                        o.amount,
+                        o.status,
+                        o.created_at AS createdAt,
+                        o.updated_at AS updatedAt
+                     FROM orders o
+                     WHERE o.order_id_display = ?`,
+                    [orderId]
                 );
 
+                const order = (orderRows as any[])[0];
                 if (!order) {
                     res.status(404).json({ error: 'Order not found' });
                     return;
                 }
 
+                // Fetch customer info from users table
+                const [userRows] = await globalPool.execute(
+                    `SELECT id, username, email, phone, geo_lat, geo_lng,
+                            address_pincode, address_county, address_country, address_state
+                     FROM users WHERE id = ?`,
+                    [order.customer_id]
+                );
+                const customer = (userRows as any[])[0] || null;
+
+                // Build response matching the old Sanity shape
+                const result = {
+                    _id: order.id,
+                    orderId: order.orderId,
+                    customer: customer ? {
+                        _id: customer.id,
+                        username: customer.username,
+                        email: customer.email,
+                        phone: customer.phone,
+                        geoPoint: customer.geo_lat && customer.geo_lng
+                            ? { lat: customer.geo_lat, lng: customer.geo_lng }
+                            : null,
+                        address: customer.address_pincode
+                            ? {
+                                pincode: customer.address_pincode,
+                                county: customer.address_county,
+                                country: customer.address_country,
+                                state: customer.address_state
+                              }
+                            : null
+                    } : null,
+                    product: null, // product info not stored in orders table directly
+                    quantity: order.quantity,
+                    transactionId: order.transactionId,
+                    paymentSignature: order.paymentSignature,
+                    amount: order.amount,
+                    status: order.status,
+                    createdAt: order.createdAt,
+                    expectedDelivery: null // no expected_delivery in orders table
+                };
+
                 // Cache the order in Redis
                 if (redisClient.isOpen) {
-                    await redisClient.hSet("hashSet:orders", orderId, JSON.stringify(order));
+                    await redisClient.hSet("hashSet:orders", orderId, JSON.stringify(result));
                     await redisClient.sAdd("set:order:ids", orderId);
                 }
 
-                res.status(200).json(order);
+                res.status(200).json(result);
             } catch (e: Error | any) {
                 console.error('Error fetching order:', e);
                 res.status(500).json({ error: e.message });
@@ -170,31 +213,78 @@ if (cluster.isPrimary) {
                 const { shipperId } = req.params;
                 console.log(`<Fetching orders for shipper: ${shipperId}>`);
 
-                // Fetch from Sanity
-                const orders = await sanityClient.fetch(
-                    `*[_type=='order' && shipperId==$shipperId && status in ['shipping', 'dispatched']]{
-            _id,
-            orderId,
-            customer->{
-              _id,
-              username,
-              email,
-              phone,
-              geoPoint,
-              address
-            },
-            product,
-            quantity,
-            transactionId,
-            amount,
-            status,
-            createdAt,
-            expectedDelivery
-          } | order(createdAt desc)`,
-                    { shipperId }
+                // Fetch from MySQL global DB — orders with status 'shipping' or 'dispatched' for this shipper
+                const [orderRows] = await globalPool.execute(
+                    `SELECT 
+                        o.id,
+                        o.order_id_display AS orderId,
+                        o.customer_id,
+                        o.shipper_id,
+                        o.quantity,
+                        o.transaction_id AS transactionId,
+                        o.payment_signature AS paymentSignature,
+                        o.amount,
+                        o.status,
+                        o.created_at AS createdAt,
+                        o.updated_at AS updatedAt
+                     FROM orders o
+                     WHERE o.shipper_id = ?
+                       AND o.status IN ('shipping', 'dispatched')
+                     ORDER BY o.created_at DESC`,
+                    [shipperId]
                 );
 
-                res.status(200).json(orders);
+                const orders = orderRows as any[];
+
+                // Fetch customer info for all orders (batch)
+                const customerIds = [...new Set(orders.map(o => o.customer_id).filter(Boolean))];
+                let customerMap: Record<string, any> = {};
+                if (customerIds.length > 0) {
+                    const placeholders = customerIds.map(() => '?').join(',');
+                    const [userRows] = await globalPool.execute(
+                        `SELECT id, username, email, phone, geo_lat, geo_lng,
+                                address_pincode, address_county, address_country, address_state
+                         FROM users WHERE id IN (${placeholders})`,
+                        customerIds
+                    );
+                    for (const user of (userRows as any[])) {
+                        customerMap[user.id] = user;
+                    }
+                }
+
+                const result = orders.map(order => {
+                    const customer = customerMap[order.customer_id] || null;
+                    return {
+                        _id: order.id,
+                        orderId: order.orderId,
+                        customer: customer ? {
+                            _id: customer.id,
+                            username: customer.username,
+                            email: customer.email,
+                            phone: customer.phone,
+                            geoPoint: customer.geo_lat && customer.geo_lng
+                                ? { lat: customer.geo_lat, lng: customer.geo_lng }
+                                : null,
+                            address: customer.address_pincode
+                                ? {
+                                    pincode: customer.address_pincode,
+                                    county: customer.address_county,
+                                    country: customer.address_country,
+                                    state: customer.address_state
+                                  }
+                                : null
+                        } : null,
+                        product: null,
+                        quantity: order.quantity,
+                        transactionId: order.transactionId,
+                        amount: order.amount,
+                        status: order.status,
+                        createdAt: order.createdAt,
+                        expectedDelivery: null
+                    };
+                });
+
+                res.status(200).json(result);
             } catch (e: Error | any) {
                 console.error('Error fetching shipper orders:', e);
                 res.status(500).json({ error: e.message });
