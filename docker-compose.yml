@@ -371,6 +371,7 @@ services:
       - kafka2
       - kafka3
       - redis_storage
+      - redis_vector_db
       - global_sql_data
       - mysql1
       - mysql2
@@ -436,6 +437,7 @@ services:
       - kafka2
       - kafka3
       - redis_storage
+      - redis_vector_db
       - global_sql_data
       - mysql1
       - mysql2
