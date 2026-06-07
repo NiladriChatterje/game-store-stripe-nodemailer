@@ -73,19 +73,39 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 const verifyClerkToken = async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
+
     if (!token) {
       res.status(401).json({ error: 'No token provided' });
       return;
     }
+
+    if (!process.env.CLERK_SECRET_KEY) {
+      res.status(500).json({ error: 'Server misconfiguration: missing CLERK_SECRET_KEY' });
+      return;
+    }
+
     const payload = await verifyToken(token, {
       secretKey: process.env.CLERK_SECRET_KEY,
-      clockSkewInMs: 300000
+      clockSkewInMs: 300000,
     });
 
     req.auth = payload;
     next();
-  } catch (error) {
-    console.error('Token verification failed:', error);
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : String(error);
+    const name = typeof error?.name === 'string' ? error.name : '';
+
+    // Handle Clerk/JWK resolution failures (ex: "Failed to resolve JWK during verification") safely.
+    const isJwkResolutionIssue = message.includes('JWK') || message.includes('jwks') || message.includes('Failed to resolve JWK');
+    const isJwtIssue = message.toLowerCase().includes('jwt') || name.toLowerCase().includes('jwt');
+
+    console.error('Token verification failed:', { name, message });
+
+    if (isJwkResolutionIssue || isJwtIssue) {
+      res.status(403).json({ error: 'Invalid token', details: 'Token could not be verified (JWK/JWT issue).' });
+      return;
+    }
+
     res.status(403).json({ error: 'Invalid token' });
     return;
   }
@@ -323,6 +343,7 @@ app.get(
       return;
     } catch (e: Error | any) {
       res.status(500).json({ error: e.message });
+      return;
     }
   });
 

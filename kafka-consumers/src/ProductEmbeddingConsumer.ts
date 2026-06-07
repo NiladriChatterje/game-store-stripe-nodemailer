@@ -10,7 +10,9 @@ const kafka: Kafka = new Kafka({
 
 const embeddingModel = new OllamaEmbeddings({
   model: 'nomic-embed-text',
-  baseUrl: process.env.OLLAMA_URL || 'http://host.docker.internal:11434',
+  baseUrl: (typeof globalThis !== 'undefined' &&
+    (globalThis as unknown as { process?: { env?: { OLLAMA_URL?: string } } }).process?.env?.OLLAMA_URL) ||
+    'http://host.docker.internal:11434',
   maxConcurrency: 4
 });
 
@@ -18,7 +20,9 @@ const redisVectorDB = RedisClient({
   url: "redis://redis_vector_db:6379"
 });
 
-redisVectorDB.on('error', err => console.error('Redis VectorDB Error:', err));
+redisVectorDB.on('error', (err: unknown) =>
+  console.error('Redis VectorDB Error:', err)
+);
 await redisVectorDB.connect();
 
 async function main() {
@@ -37,13 +41,17 @@ async function main() {
   }: EachMessagePayload) {
     if (!message.value) return;
 
-    console.log("<arrayBufferLike> : ", message.value);
+    // Avoid logging full payload/buffers (can be huge and cause memory/CPU spikes)
+    console.log(
+      `[product-embedding-consumer] msg topic=${topic} partition=${partition} offset=${message.offset} valueBytes=${message.value?.length ?? 0}`
+    );
 
     try {
       const productPayload: ProductType = JSON.parse(message.value.toString());
-      console.log(`product payload :`, productPayload);
-
       const productId = productPayload._id;
+      // Keep logs small (avoid dumping full payload)
+      console.log(`[product-embedding-consumer] embedding request productId=${productId ?? "missing"}`);
+
       if (!productId) {
         console.warn("Product payload is missing _id, skipping embedding generation.");
         return;

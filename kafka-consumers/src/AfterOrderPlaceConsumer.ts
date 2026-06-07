@@ -1,428 +1,369 @@
-import { EachMessagePayload, Kafka, logLevel } from "kafkajs";
-import { createClient, SanityClient } from "@sanity/client";
+import { EachMessagePayload, Kafka } from "kafkajs";
 import { createClient as RedisClient } from "redis";
-import type { ProductType } from "../declaration/productType.d.ts";
-import { sanityConfig } from "@utils";
-import { uuidv7 as uuid } from 'uuidv7'
+import mysql from "mysql2/promise";
+import { uuidv7 as uuid } from "uuidv7";
+
+// MySQL connection/sharding helpers are implemented in other consumers via ShardRouter.
+// If you want AFTER-ORDER to be shard-aware, we can extend it later.
+// For now (logic option B), we use global DB writes + product_quantities/seller_product_details reads.
+import { GLOBAL_DB_CONFIG, PRODUCT_SHARDS_CONFIG } from "./utils/ShardRouter";
+import { PRODUCT_SHARDS_CONFIG as SHARDS } from "./utils/ShardRouter";
+import { ShardHelper } from "./utils/ShardHelper";
 
 const kafka: Kafka = new Kafka({
-    clientId: "xvstore",
-    brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
+  clientId: "xvstore",
+  brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 
 
 async function main() {
-    const redisClient = RedisClient({
-        socket: {
-            host: 'redis_storage',
-            port: 6379
+  const redisClient = RedisClient({
+    url: "redis://redis_storage:6379",
+  });
+  await redisClient.connect();
+
+  // Global pool for orders + seller_orders + refunds
+  const globalPool = mysql.createPool({
+    ...GLOBAL_DB_CONFIG,
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 0,
+  });
+
+  // Shard pools for inventory (seller_product_details)
+  const shardPools = PRODUCT_SHARDS_CONFIG.map((cfg) =>
+    mysql.createPool({
+      ...cfg,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+    })
+  );
+
+  const consumer = kafka.consumer({
+    groupId: "product-quantity-reduction",
+  });
+
+  await consumer.connect();
+  await consumer.subscribe({ topic: "update-product-quantity-topic" });
+
+  async function handleEachMessages({
+    heartbeat,
+    message,
+    partition,
+    topic,
+  }: EachMessagePayload) {
+    console.log(
+      `[after-order-place-consumer] msg received topic=${topic} partition=${partition} offset=${message.offset} valueBytes=${message.value?.length ?? 0}`
+    );
+
+    try {
+      const productPayload = JSON.parse(message.value?.toString() || "{}") as {
+        customer: string;
+        customerEmail: string;
+        product: string; // product_id
+        transactionId: string;
+        orderId: string;
+        geoPoint: { lat: number; lng: number };
+        pincode: number;
+        paymentSignature: string;
+        amount: number;
+        quantity: number;
+      };
+
+      const pincodeStr = String(productPayload.pincode).trim();
+      const productId = productPayload.product;
+
+      const unitPrice = productPayload.amount / productPayload.quantity;
+
+      // Determine shard by pincode
+      const shardIndex = ShardHelper.getShardIndex(productPayload.pincode);
+      const inventoryPool = shardPools[shardIndex];
+
+      const createdOrderId = uuid();
+
+      const [orderInsertResult] = await globalPool.execute(
+        `INSERT INTO orders (
+          id, order_id_display, customer_id, quantity,
+          transaction_id, payment_signature, amount, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          createdOrderId,
+          productPayload.orderId,
+          productPayload.customer,
+          productPayload.quantity,
+          productPayload.transactionId,
+          productPayload.paymentSignature,
+          productPayload.amount,
+          "orderPlaced",
+        ] as any[]
+      );
+
+      let remainingQuantity = productPayload.quantity;
+      let fulfilledQuantity = 0;
+      let totalFulfilledAmount = 0;
+
+      // Seller selection option B: fulfill from available stock for product + pincode,
+      // without geo distance ordering.
+      const [sellerRows] = await inventoryPool.execute(
+        `SELECT id, seller_id, quantity
+         FROM seller_product_details
+         WHERE product_id = ? AND pincode = ? AND quantity > 0
+         ORDER BY quantity DESC`,
+        [productId, pincodeStr] as any[]
+      );
+
+      const sellers = sellerRows as Array<{
+        id: string;
+        seller_id: string;
+        quantity: number;
+      }>;
+
+      const assignedSellers: Array<{
+        sellerId: string;
+        sellerProductDetailsId: string;
+        quantity: number;
+        amount: number;
+      }> = [];
+
+      for (const s of sellers) {
+        if (remainingQuantity <= 0) break;
+
+        const quantityFromThisSeller = Math.min(s.quantity, remainingQuantity);
+        if (quantityFromThisSeller <= 0) continue;
+
+        const amountFromThisSeller = quantityFromThisSeller * unitPrice;
+
+        assignedSellers.push({
+          sellerId: s.seller_id,
+          sellerProductDetailsId: s.id,
+          quantity: quantityFromThisSeller,
+          amount: amountFromThisSeller,
+        });
+
+        fulfilledQuantity += quantityFromThisSeller;
+        totalFulfilledAmount += amountFromThisSeller;
+        remainingQuantity -= quantityFromThisSeller;
+      }
+
+      const isPartialFulfillment =
+        fulfilledQuantity > 0 && fulfilledQuantity < productPayload.quantity;
+
+      const refundAmount = (productPayload.quantity - fulfilledQuantity) * unitPrice;
+
+      const kafkaProducer = kafka.producer();
+      await kafkaProducer.connect();
+
+      if (assignedSellers.length > 0) {
+        // Create seller_orders + seller_order_items and decrement stock
+        for (const assignment of assignedSellers) {
+          const sellerOrderId = uuid();
+
+          await globalPool.execute(
+            `INSERT INTO seller_orders (
+              id, order_id, seller_id, status, total_amount, is_partial_fulfillment, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              sellerOrderId,
+              createdOrderId,
+              assignment.sellerId,
+              "pending",
+              assignment.amount,
+              isPartialFulfillment ? 1 : 0,
+              isPartialFulfillment
+                ? `Partial fulfillment: ${assignment.quantity} units.`
+                : `Full fulfillment: ${assignment.quantity} units.`,
+            ] as any[]
+          );
+
+          await globalPool.execute(
+            `INSERT INTO seller_order_items (
+              seller_order_id, product_id, quantity, price
+            ) VALUES (?, ?, ?, ?)`,
+            [
+              sellerOrderId,
+              productId,
+              assignment.quantity,
+              assignment.amount / assignment.quantity,
+            ] as any[]
+          );
+
+          // Decrement inventory for this seller/product/pincode
+          await inventoryPool.execute(
+            `UPDATE seller_product_details
+             SET quantity = GREATEST(0, quantity - ?)
+             WHERE id = ?`,
+            [assignment.quantity, assignment.sellerProductDetailsId] as any[]
+          );
+
+          // ✅ SEND NOTIFICATION TO SELLER VIA KAFKA
+          await kafkaProducer.send({
+            topic: "seller-order-notification-topic",
+            messages: [
+              {
+                value: JSON.stringify({
+                  notificationId: uuid(),
+                  sellerOrderId,
+                  orderId: createdOrderId,
+                  sellerId: assignment.sellerId,
+                  customerId: productPayload.customer,
+                  productId,
+                  quantity: assignment.quantity,
+                  totalAmount: assignment.amount,
+                  isPartialFulfillment,
+                  status: "pending",
+                  timestamp: new Date().toISOString(),
+                  message: isPartialFulfillment
+                    ? `New partial order: ${assignment.quantity} units`
+                    : `New order: ${assignment.quantity} units`,
+                }),
+              },
+            ],
+          });
         }
-    });
-    await redisClient.connect();
-    const sanityClient: SanityClient = createClient({
-        ...sanityConfig,
-        perspective: "published",
-    });
-    const consumer = kafka.consumer({
-        groupId: "product-quantity-reduction",
-    });
 
-    await consumer.connect();
-    await consumer.subscribe({ topic: "update-product-quantity-topic" });
+        if (isPartialFulfillment) {
+          await globalPool.execute(
+            `UPDATE orders
+             SET fulfilled_quantity = ?, refund_amount = ?, refund_status = ?, partial_fulfillment_reason = ?
+             WHERE id = ?`,
+            [
+              fulfilledQuantity,
+              refundAmount,
+              "pending",
+              `Partial fulfillment: only ${fulfilledQuantity}/${productPayload.quantity} units available.`,
+              createdOrderId,
+            ] as any[]
+          );
 
-    async function handleEachMessages({
-        heartbeat,
-        message,
-        partition,
-        topic,
-    }: EachMessagePayload) {
-        console.log("<arrayBufferLike> : ", message.value);
+          // Trigger refund process via Kafka
+          await kafkaProducer.send({
+            topic: "order-refund-topic",
+            messages: [
+              {
+                value: JSON.stringify({
+                  orderId: createdOrderId,
+                  transactionId: productPayload.transactionId,
+                  customerId: productPayload.customer,
+                  customerEmail: productPayload.customerEmail,
+                  refundAmount,
+                  reason: `Partial fulfillment refund - ${remainingQuantity} units couldn't be fulfilled`,
+                  originalAmount: productPayload.amount,
+                  fulfilledAmount: totalFulfilledAmount,
+                  fulfilledQuantity,
+                  requestedQuantity: productPayload.quantity,
+                }),
+              },
+            ],
+          });
 
-        try {
-            const productPayload: {
-                customer: string;
-                customerEmail: string;
-                product: string;//product_id
-                transactionId: string;
-                orderId: string;
-                geoPoint: { lat: number; lng: number };
-                pincode: number;
-                paymentSignature: string;
-                amount: number;
-                quantity: number;
-            } = JSON.parse(
-                message.value.toString()
-            );
+          await kafkaProducer.send({
+            topic: "customer-order-notification-topic",
+            messages: [
+              {
+                value: JSON.stringify({
+                  notificationId: uuid(),
+                  orderId: createdOrderId,
+                  customerId: productPayload.customer,
+                  customerEmail: productPayload.customerEmail,
+                  productId,
+                  quantity: fulfilledQuantity,
+                  totalAmount: totalFulfilledAmount,
+                  isPartialFulfillment: true,
+                  refundAmount,
+                  status: "processing",
+                  timestamp: new Date().toISOString(),
+                  message: `Your order is partially fulfilled. ${fulfilledQuantity}/${productPayload.quantity} items assigned. Refund of ₹${refundAmount.toFixed(
+                    2
+                  )} will be processed.`,
+                }),
+              },
+            ],
+          });
+        }
+      } else {
+        // No sellers available -> full refund
+        await globalPool.execute(
+          `UPDATE orders
+           SET fulfilled_quantity = 0, refund_amount = ?, refund_status = ?, partial_fulfillment_reason = ?
+           WHERE id = ?`,
+          [
+            productPayload.amount,
+            "pending",
+            "No sellers available for product/pincode.",
+            createdOrderId,
+          ] as any[]
+        );
 
-
-
-            // ✅ Create Order Document in Sanity
-            const orderDocument = {
-                _id: uuid(),
-                _type: 'order',
-                customer: { _ref: productPayload.customer },
-                product: [{ _ref: productPayload.product }],
-                quantity: productPayload.quantity,
+        await kafkaProducer.send({
+          topic: "order-refund-topic",
+          messages: [
+            {
+              value: JSON.stringify({
+                orderId: createdOrderId,
                 transactionId: productPayload.transactionId,
-                orderId: productPayload.orderId,
-                paymentSignature: productPayload.paymentSignature,
-                amount: productPayload.amount,
-                status: 'orderPlaced'
-            };
-
-            const createdOrder = await sanityClient.create(orderDocument);
-            console.log('Order created successfully:', {
-                orderId: createdOrder._id,
                 customerId: productPayload.customer,
-                productId: productPayload.product,
-                amount: productPayload.amount,
-                status: 'orderPlaced'
-            });
+                customerEmail: productPayload.customerEmail,
+                refundAmount: productPayload.amount,
+                reason: "Full refund - no sellers available",
+                originalAmount: productPayload.amount,
+                fulfilledAmount: 0,
+                fulfilledQuantity: 0,
+                requestedQuantity: productPayload.quantity,
+              }),
+            },
+          ],
+        });
 
-            // ✅ ALGORITHM: Find and assign sellers with PARTIAL FULFILLMENT SUPPORT
-            // Step 1: Fetch the product details
-            const productDetails: ProductType = await sanityClient.fetch(`*[_type == 'product' && _id == "${productPayload.product}"][0]`);
+        await kafkaProducer.send({
+          topic: "customer-order-notification-topic",
+          messages: [
+            {
+              value: JSON.stringify({
+                notificationId: uuid(),
+                orderId: createdOrderId,
+                customerId: productPayload.customer,
+                customerEmail: productPayload.customerEmail,
+                productId,
+                quantity: 0,
+                totalAmount: 0,
+                isPartialFulfillment: false,
+                refundAmount: productPayload.amount,
+                status: "rejected",
+                timestamp: new Date().toISOString(),
+                message: `Unfortunately, no sellers available for your order. Full refund of ₹${productPayload.amount.toFixed(
+                  2
+                )} will be processed.`,
+              }),
+            },
+          ],
+        });
+      }
 
-            if (!productDetails) {
-                throw new Error(`Product not found: ${productPayload.product}`);
-            }
+      await kafkaProducer.disconnect();
+      await heartbeat();
 
-            const unitPrice = productDetails.price?.pdtPrice ?? productPayload.amount / productPayload.quantity;
-            let remainingQuantity = productPayload.quantity;
-            let fulfilledQuantity = 0;
-            let totalFulfilledAmount = 0;
-            const MAX_RADIUS_KM = 5;
-            const assignedSellers: Array<{
-                sellerId: string;
-                quantity: number;
-                amount: number;
-                distance: number;
-                sellerProductDetailsId: string;
-            }> = [];
+      consumer.commitOffsets([{ topic, partition, offset: message.offset }]);
+    } catch (error: Error | any) {
+      console.error("Failed to process order message:", {
+        error: error?.message,
+        stack: error?.stack,
+      });
 
-            // Step 2: Fetch ALL sellers sorted by distance (no quantity filter initially)
-            const allSellersByDistance = await sanityClient.fetch(`
-                *[_type == 'seller_product_details' 
-                    && product_id == "${productPayload.product}"
-                    && pincode == "${productPayload.pincode}"
-                ] | order(geo::distance(geoPoint, geo::latLng(${productPayload.geoPoint.lat}, ${productPayload.geoPoint.lng})) asc) {
-                    _id,
-                    seller,
-                    product_id,
-                    quantity,
-                    pincode,
-                    "distance": geo::distance(geoPoint, geo::latLng(${productPayload.geoPoint.lat}, ${productPayload.geoPoint.lng}))
-                }
-            `);
-
-            // Step 3: PARTIAL FULFILLMENT - Assign sellers until quantity is fulfilled or radius limit exceeded
-            if (allSellersByDistance && allSellersByDistance.length > 0) {
-                for (const seller of allSellersByDistance) {
-                    // Stop if radius exceeds 5km
-                    if (seller.distance > MAX_RADIUS_KM) {
-                        console.warn(`Stopping seller search - radius exceeded ${MAX_RADIUS_KM}km. Distance: ${seller.distance?.toFixed(2)}km`);
-                        break;
-                    }
-
-                    // Skip sellers with no stock
-                    if (!seller.quantity || seller.quantity <= 0) {
-                        console.log(`Seller ${seller._id} has no stock, skipping`);
-                        continue;
-                    }
-
-                    // Calculate how much this seller can fulfill
-                    const quantityFromThisSeller = Math.min(seller.quantity, remainingQuantity);
-                    const amountFromThisSeller = quantityFromThisSeller * unitPrice;
-
-                    // Track this seller's assignment
-                    assignedSellers.push({
-                        sellerId: seller.seller,
-                        quantity: quantityFromThisSeller,
-                        amount: amountFromThisSeller,
-                        distance: seller.distance,
-                        sellerProductDetailsId: seller._id
-                    });
-
-                    fulfilledQuantity += quantityFromThisSeller;
-                    totalFulfilledAmount += amountFromThisSeller;
-                    remainingQuantity -= quantityFromThisSeller;
-
-                    console.log(`Seller ${seller.seller} assigned ${quantityFromThisSeller} units at distance ${seller.distance?.toFixed(2)}km`);
-
-                    // Stop if all quantity is fulfilled
-                    if (remainingQuantity <= 0) {
-                        break;
-                    }
-                }
-            }
-
-            // Step 4: Check if partial fulfillment is happening
-            const isPartialFulfillment = fulfilledQuantity > 0 && fulfilledQuantity < productPayload.quantity;
-            const refundAmount = (productPayload.quantity - fulfilledQuantity) * unitPrice;
-
-            // ✅ Update Main Product Stock (Central Inventory) based on Fulfilled Quantity
-            if (fulfilledQuantity > 0) {
-                const pincodeStr = String(productPayload.pincode).trim();
-                console.log(`[StockUpdate] Attempting to update stock for Product: ${productPayload.product}, Pincode: ${pincodeStr}, Fulfilled: ${fulfilledQuantity}`);
-
-                // Fetch the specific quantity object's _key and current value
-                // We specifically select the item that matches the pincode
-                const currentProductState = await sanityClient.fetch(`*[_type == 'product' && _id == "${productPayload.product}"][0]{
-                    "quantityItem": quantity[pincode == "${pincodeStr}"][0] {
-                        _key,
-                        quantity,
-                        _type
-                    }
-                 }`);
-
-                console.log(`[StockUpdate] Fetch Result:`, JSON.stringify(currentProductState));
-
-                if (currentProductState?.quantityItem?._key) {
-                    const { _key, quantity: currentStock } = currentProductState.quantityItem;
-                    const newStock = Math.max(0, (currentStock || 0) - fulfilledQuantity);
-
-                    console.log(`[StockUpdate] Current Stock: ${currentStock}, New Stock: ${newStock}, Key: ${_key}`);
-
-                    // Robust Update: Replace the item in the array using its _key
-                    const result = await sanityClient
-                        .patch(productPayload.product)
-                        .insert('replace', `quantity[_key=="${_key}"]`, [{
-                            _key: _key,
-                            _type: 'pair',
-                            pincode: pincodeStr,
-                            quantity: newStock
-                        }])
-                        .commit({ autoGenerateArrayKeys: true });
-
-                    console.log(`[StockUpdate] Commit Result:`, JSON.stringify(result));
-                } else {
-                    console.warn(`[StockUpdate] ERROR: Could not find quantity record for pincode "${pincodeStr}". Verify if product ${productPayload.product} has this pincode initialized.`);
-                }
-            }
-
-            // Step 5: Create OrderAcceptedBySeller documents for each assigned seller
-            if (assignedSellers.length > 0) {
-                for (const assignment of assignedSellers) {
-                    const sellerOrderDocument = {
-                        _type: 'orderAcceptedBySeller',
-                        order: { _ref: createdOrder._id },
-                        seller: { _ref: assignment.sellerId },
-                        products: [{
-                            product: { _ref: productPayload.product },
-                            quantity: assignment.quantity,
-                            price: unitPrice
-                        }],
-                        status: 'pending',
-                        totalAmount: assignment.amount,
-                        isPartialFulfillment: isPartialFulfillment,
-                        notes: isPartialFulfillment
-                            ? `Partial fulfillment: ${assignment.quantity} units at distance ${assignment.distance?.toFixed(2)}km (Total order: ${productPayload.quantity} units, Refund: ₹${refundAmount?.toFixed(2)})`
-                            : `Full fulfillment: ${assignment.quantity} units at distance ${assignment.distance?.toFixed(2)}km`
-                    };
-
-                    const createdSellerOrder = await sanityClient.create(sellerOrderDocument);
-                    console.log('Seller order assigned:', {
-                        sellerOrderId: createdSellerOrder._id,
-                        sellerId: assignment.sellerId,
-                        quantity: assignment.quantity,
-                        distance: assignment.distance?.toFixed(2),
-                        isPartial: isPartialFulfillment
-                    });
-
-                    // ✅ SEND NOTIFICATION TO SELLER VIA KAFKA
-                    const kafkaProducer = kafka.producer();
-                    await kafkaProducer.connect();
-
-                    await kafkaProducer.send({
-                        topic: 'seller-order-notification-topic',
-                        messages: [{
-                            value: JSON.stringify({
-                                notificationId: uuid(),
-                                sellerOrderId: createdSellerOrder._id,
-                                orderId: createdOrder._id,
-                                sellerId: assignment.sellerId,
-                                customerId: productPayload.customer,
-                                productId: productPayload.product,
-                                quantity: assignment.quantity,
-                                totalAmount: assignment.amount,
-                                distance: assignment.distance?.toFixed(2),
-                                isPartialFulfillment: isPartialFulfillment,
-                                status: 'pending',
-                                timestamp: new Date().toISOString(),
-                                message: isPartialFulfillment
-                                    ? `New partial order: ${assignment.quantity} units (${assignment.distance?.toFixed(2)}km away)`
-                                    : `New order: ${assignment.quantity} units (${assignment.distance?.toFixed(2)}km away)`
-                            })
-                        }]
-                    });
-
-                    await kafkaProducer.disconnect();
-                    console.log('Seller notification sent to Kafka:', {
-                        sellerOrderId: createdSellerOrder._id,
-                        sellerId: assignment.sellerId
-                    });
-
-                    // Update the seller's product quantity
-                    // Get the original seller stock to calculate remaining
-                    const sellerStockBefore = allSellersByDistance.find((s: any) => s._id === assignment.sellerProductDetailsId)?.quantity ?? 0;
-                    await sanityClient.patch(assignment.sellerProductDetailsId)
-                        .set({
-                            quantity: Math.max(0, sellerStockBefore - assignment.quantity)
-                        })
-                        .commit();
-                }
-
-                // Step 6: If partial fulfillment, update order with refund info and trigger refund process
-                if (isPartialFulfillment) {
-                    await sanityClient.patch(createdOrder._id)
-                        .set({
-                            fulfilledQuantity: fulfilledQuantity,
-                            refundAmount: refundAmount,
-                            refundStatus: 'pending',
-                            partialFulfillmentReason: `Only ${fulfilledQuantity}/${productPayload.quantity} units available within ${MAX_RADIUS_KM}km radius`
-                        })
-                        .commit();
-
-                    console.log('Partial fulfillment order updated with refund info:', {
-                        orderId: createdOrder._id,
-                        fulfilledQuantity,
-                        remainingQuantity: productPayload.quantity - fulfilledQuantity,
-                        refundAmount: refundAmount?.toFixed(2),
-                        reason: `Insufficient stock within ${MAX_RADIUS_KM}km radius`
-                    });
-
-                    // Trigger refund process via Kafka
-                    const kafkaProducer = kafka.producer();
-                    await kafkaProducer.connect();
-
-                    await kafkaProducer.send({
-                        topic: 'order-refund-topic',
-                        messages: [{
-                            value: JSON.stringify({
-                                orderId: createdOrder._id,
-                                transactionId: productPayload.transactionId,
-                                customerId: productPayload.customer,
-                                customerEmail: productPayload.customerEmail,
-                                refundAmount: refundAmount,
-                                reason: `Partial fulfillment refund - ${remainingQuantity} units couldn't be fulfilled`,
-                                originalAmount: productPayload.amount,
-                                fulfilledAmount: totalFulfilledAmount,
-                                fulfilledQuantity: fulfilledQuantity,
-                                requestedQuantity: productPayload.quantity
-                            })
-                        }]
-                    });
-
-                    // ✅ SEND CUSTOMER NOTIFICATION FOR PARTIAL FULFILLMENT
-                    await kafkaProducer.send({
-                        topic: 'customer-order-notification-topic',
-                        messages: [{
-                            value: JSON.stringify({
-                                notificationId: uuid(),
-                                orderId: createdOrder._id,
-                                customerId: productPayload.customer,
-                                customerEmail: productPayload.customerEmail,
-                                productId: productPayload.product,
-                                quantity: fulfilledQuantity,
-                                totalAmount: totalFulfilledAmount,
-                                isPartialFulfillment: true,
-                                refundAmount: refundAmount,
-                                status: 'processing',
-                                timestamp: new Date().toISOString(),
-                                message: `Your order is partially fulfilled. ${fulfilledQuantity}/${productPayload.quantity} items assigned. Refund of ₹${refundAmount?.toFixed(2)} will be processed.`
-                            })
-                        }]
-                    });
-
-                    await kafkaProducer.disconnect();
-                    console.log('Refund event and customer notification sent to Kafka:', { orderId: createdOrder._id, refundAmount });
-                }
-            } else {
-                // No sellers available within radius - full refund
-                console.warn(`No sellers available for product ${productPayload.product} at pincode ${productPayload.pincode} within ${MAX_RADIUS_KM}km radius`);
-
-                await sanityClient.patch(createdOrder._id)
-                    .set({
-                        fulfilledQuantity: 0,
-                        refundAmount: productPayload.amount,
-                        refundStatus: 'pending',
-                        partialFulfillmentReason: `No sellers available within ${MAX_RADIUS_KM}km radius`
-                    })
-                    .commit();
-
-                // Trigger full refund via Kafka
-                const kafkaProducer = kafka.producer();
-                await kafkaProducer.connect();
-
-                await kafkaProducer.send({
-                    topic: 'order-refund-topic',
-                    messages: [{
-                        value: JSON.stringify({
-                            orderId: createdOrder._id,
-                            transactionId: productPayload.transactionId,
-                            customerId: productPayload.customer,
-                            customerEmail: productPayload.customerEmail,
-                            refundAmount: productPayload.amount,
-                            reason: `Full refund - no sellers available within ${MAX_RADIUS_KM}km radius`,
-                            originalAmount: productPayload.amount,
-                            fulfilledAmount: 0,
-                            fulfilledQuantity: 0,
-                            requestedQuantity: productPayload.quantity
-                        })
-                    }]
-                });
-
-                // ✅ SEND CUSTOMER NOTIFICATION FOR FULL REFUND
-                await kafkaProducer.send({
-                    topic: 'customer-order-notification-topic',
-                    messages: [{
-                        value: JSON.stringify({
-                            notificationId: uuid(),
-                            orderId: createdOrder._id,
-                            customerId: productPayload.customer,
-                            customerEmail: productPayload.customerEmail,
-                            productId: productPayload.product,
-                            quantity: 0,
-                            totalAmount: 0,
-                            isPartialFulfillment: false,
-                            refundAmount: productPayload.amount,
-                            status: 'rejected',
-                            timestamp: new Date().toISOString(),
-                            message: `Unfortunately, no sellers available for your order. Full refund of ₹${productPayload.amount?.toFixed(2)} will be processed.`
-                        })
-                    }]
-                });
-
-                await kafkaProducer.disconnect();
-                console.log('Full refund event and customer notification sent to Kafka:', { orderId: createdOrder._id });
-            }
-
-            consumer.commitOffsets([
-                { topic, partition, offset: message.offset },
-            ]);
-        } catch (error: Error | any) {
-            console.error('Failed to process order message:', {
-                error: error?.message,
-                stack: error?.stack,
-                payload: message.value.toString()
-            });
-
-            // Commit offset even on error to prevent infinite retry loop
-            try {
-                consumer.commitOffsets([
-                    { topic, partition, offset: message.offset },
-                ]);
-            } catch (commitError) {
-                console.error('Failed to commit offset after error:', commitError);
-            }
-        }
+      // Commit offset even on error to prevent infinite retry loop
+      try {
+        consumer.commitOffsets([{ topic, partition, offset: message.offset }]);
+      } catch (commitError) {
+        console.error("Failed to commit offset after error:", commitError);
+      }
     }
+  }
 
-    consumer.run({
-        partitionsConsumedConcurrently: 5,
-        eachMessage: handleEachMessages,
-        autoCommit: false,
-    });
+  consumer.run({
+    partitionsConsumedConcurrently: 5,
+    eachMessage: handleEachMessages,
+    autoCommit: false,
+  });
 }
 
 main().catch(console.error);

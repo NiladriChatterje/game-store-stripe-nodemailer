@@ -33,10 +33,10 @@ services:
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
-      KAFKA_HEAP_OPTS: "-Xmx256M -Xms128M"
+      KAFKA_HEAP_OPTS: "-Xmx384M -Xms128M"
     depends_on:
       - zoo1
-    mem_limit: 512m
+    mem_limit: 768m
     cpus: 1.0
 
   kafka2:
@@ -59,10 +59,10 @@ services:
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
-      KAFKA_HEAP_OPTS: "-Xmx256M -Xms128M"
+      KAFKA_HEAP_OPTS: "-Xmx384M -Xms128M"
     depends_on:
       - zoo1
-    mem_limit: 512m
+    mem_limit: 768m
     cpus: 1.0
 
   kafka3:
@@ -85,10 +85,10 @@ services:
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
-      KAFKA_HEAP_OPTS: "-Xmx256M -Xms128M"
+      KAFKA_HEAP_OPTS: "-Xmx384M -Xms128M"
     depends_on:
       - zoo1
-    mem_limit: 512m
+    mem_limit: 768m
     cpus: 1.0
 
   mysql1:
@@ -260,7 +260,7 @@ services:
       dockerfile: Dockerfile
     hostname: userData_service
     container_name: userData_service
-    restart: on-failure
+    restart: always
     volumes:
       - ./server/userData_service:/app
       - /app/node_modules
@@ -377,7 +377,7 @@ services:
       - mysql3
       - mysql4
       - mysql5
-    mem_limit: 512m
+    mem_limit: 1.5g
     cpus: 1.0
 
   sse_service:
@@ -442,7 +442,7 @@ services:
       - mysql3
       - mysql4
       - mysql5
-    mem_limit: 512m
+    mem_limit: 1.5g
     cpus: 1.0
 
 volumes:
