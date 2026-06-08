@@ -12,32 +12,75 @@ const kafka = new Kafka({
     brokers: ["kafka1:9092", "kafka2:9093", "kafka3:9094"],
 });
 
+function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function init() {
     const consumer = kafka.consumer({
         groupId: 'seller-subscription-transaction',
     });
 
-    const pool = mysql.createPool(GLOBAL_DB_CONFIG);
+    const pool = mysql.createPool({
+        ...GLOBAL_DB_CONFIG,
+        waitForConnections: true,
+        connectionLimit: 3,
+        queueLimit: 10,
+        connectTimeout: 10000
+    });
 
-    // Initialize Redis client
+    // Retry connecting to MySQL pool (global_sql_data may still be booting)
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+            const conn = await pool.getConnection();
+            console.log('[SubscriptionConsumers] MySQL pool connected');
+            conn.release();
+            break;
+        } catch (err) {
+            console.warn(`[SubscriptionConsumers] MySQL connection attempt ${attempt}/5 failed, retrying in 3s...`);
+            if (attempt === 5) {
+                console.error('[SubscriptionConsumers] Could not connect to MySQL after 5 attempts. Continuing anyway...');
+            }
+            await sleep(3000);
+        }
+    }
+
+    // Initialize Redis client (non-blocking — consumer works without Redis)
     const redisClient = createClient({
         url: 'redis://redis_storage:6379'
     });
 
-    redisClient.on('error', (err) => console.error('Redis Client Error:', err));
-    await redisClient.connect();
-    console.log('Redis client connected');
+    let redisAvailable = false;
+    redisClient.on('error', (err) => {
+        console.error('[SubscriptionConsumers] Redis Client Error:', err);
+        redisAvailable = false;
+    });
+    redisClient.on('connect', () => {
+        redisAvailable = true;
+        console.log('[SubscriptionConsumers] Redis client connected');
+    });
+    redisClient.on('end', () => {
+        redisAvailable = false;
+        console.warn('[SubscriptionConsumers] Redis client disconnected');
+    });
+
+    try {
+        await redisClient.connect();
+    } catch (err) {
+        console.warn('[SubscriptionConsumers] Redis connection failed at startup — continuing without Redis cache');
+        redisAvailable = false;
+    }
 
     const producer = kafka.producer();
 
-    async function handleMessage({ message }: EachMessagePayload) {
+    async function handleMessage({ message, heartbeat }: EachMessagePayload) {
         try {
             const payload = message.value ? JSON.parse(message.value.toString()) : null;
-            console.log('RECV: [SubscriptionConsumers] message received on admin-subscriptions-topic');
+            console.log('[SubscriptionConsumers] RECV: message on admin-subscriptions-topic');
             let { _id, subscriptionPlan } = payload;
 
             if (!_id || !subscriptionPlan) {
-                console.log('Skipping message: missing _id or subscriptionPlan');
+                console.log('[SubscriptionConsumers] Skipping message: missing _id or subscriptionPlan');
                 return;
             }
 
@@ -46,7 +89,18 @@ async function init() {
                 _id = `seller-${_id}`;
             }
 
-            console.log('Processing subscription for seller:', _id);
+            console.log('[SubscriptionConsumers] Processing subscription for seller:', _id);
+
+            // Verify the seller exists in the sellers table (foreign key constraint check)
+            const [sellerRows]: any = await pool.execute(
+                'SELECT id FROM sellers WHERE id = ?',
+                [_id]
+            );
+
+            if (!Array.isArray(sellerRows) || sellerRows.length === 0) {
+                console.warn(`[SubscriptionConsumers] SKIPPING: Seller ${_id} does not exist in sellers table. Foreign key would fail.`);
+                return;
+            }
 
             // 1. Get the latest expiry date for this seller
             const [rows]: any = await pool.execute(
@@ -86,51 +140,70 @@ async function init() {
                 ]
             );
 
-            console.log(`Successfully added subscription to MySQL for seller: ${_id}`);
+            console.log(`[SubscriptionConsumers] ✅ Successfully added subscription to MySQL for seller: ${_id}`);
 
-            // 4. Store subscription details in Redis hash
-            const REDIS_KEY = 'admin:subscription:details';
-            const subscriptionData = {
-                transactionId: subscriptionPlan.transactionId,
-                orderId: subscriptionPlan.orderId,
-                paymentSignature: subscriptionPlan.paymentSignature,
-                amount: subscriptionPlan.amount || 0,
-                storeAllotment: subscriptionPlan.storeAllotment || 1,
-                planActiveDate: newPlanStartDate.toISOString(),
-                planExpireDate: newPlanExpiryDate.toISOString(),
-                lastUpdated: new Date().toISOString()
-            };
+            await heartbeat();
 
-            await redisClient.hSet(REDIS_KEY, _id, JSON.stringify(subscriptionData));
+            // 4. Store subscription details in Redis hash (only if Redis is available)
+            if (redisAvailable) {
+                try {
+                    const REDIS_KEY = 'admin:subscription:details';
+                    const subscriptionData = {
+                        transactionId: subscriptionPlan.transactionId,
+                        orderId: subscriptionPlan.orderId,
+                        paymentSignature: subscriptionPlan.paymentSignature,
+                        amount: subscriptionPlan.amount || 0,
+                        storeAllotment: subscriptionPlan.storeAllotment || 1,
+                        planActiveDate: newPlanStartDate.toISOString(),
+                        planExpireDate: newPlanExpiryDate.toISOString(),
+                        lastUpdated: new Date().toISOString()
+                    };
 
-            // Set expiry based on subscription plan duration
-            const currentTime = new Date();
-            const expiryDurationMs = newPlanExpiryDate.getTime() - currentTime.getTime();
-            const EXPIRY_SECONDS = Math.ceil(expiryDurationMs / 1000); // Convert to seconds
-            await redisClient.expire(REDIS_KEY, EXPIRY_SECONDS);
+                    await redisClient.hSet(REDIS_KEY, _id, JSON.stringify(subscriptionData));
+
+                    // Set expiry based on subscription plan duration
+                    const currentTime = new Date();
+                    const expiryDurationMs = newPlanExpiryDate.getTime() - currentTime.getTime();
+                    const EXPIRY_SECONDS = Math.ceil(expiryDurationMs / 1000);
+                    await redisClient.expire(REDIS_KEY, EXPIRY_SECONDS);
+                } catch (redisErr) {
+                    console.warn('[SubscriptionConsumers] Redis write failed (cache will be built from MySQL on next fetch):', redisErr);
+                }
+            } else {
+                console.log('[SubscriptionConsumers] Redis unavailable — skipping cache write (seller_service will read from MySQL)');
+            }
+
+            await heartbeat();
 
             // 5. Notify via Kafka for SSE
             const notificationPayload = { sellerId: _id, status: 'success' };
-            await producer.connect();
-            await producer.send({
-                topic: 'subscription-notifications',
-                messages: [{ value: JSON.stringify(notificationPayload) }]
-            });
-            await producer.disconnect();
+            try {
+                await producer.connect();
+                await producer.send({
+                    topic: 'subscription-notifications',
+                    messages: [{ value: JSON.stringify(notificationPayload) }]
+                });
+            } finally {
+                await producer.disconnect().catch(() => {});
+            }
+
+            console.log(`[SubscriptionConsumers] ✅ Subscription notification sent for seller: ${_id}`);
 
         } catch (error) {
-            console.error('Error processing subscription message:', error);
+            console.error('[SubscriptionConsumers] Error processing subscription message:', error);
         }
     }
 
     await consumer.connect();
-    // Subscribing to admin-subscriptions-topic as per current structure, 
-    // but the payment service also sends here.
     await consumer.subscribe({ topic: 'admin-subscriptions-topic' });
 
     await consumer.run({
         eachMessage: handleMessage
     });
+    console.log('[SubscriptionConsumers] Consumer is running, waiting for messages...');
 }
 
-init().catch(console.error);
+init().catch((err) => {
+    console.error('[SubscriptionConsumers] Fatal error in init():', err);
+    process.exit(1);
+});

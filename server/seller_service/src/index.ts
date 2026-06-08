@@ -243,7 +243,7 @@ app.get(
 
               try {
                 const [storeRows] = await connection.execute(
-                  'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+                  'SELECT id, store_number, pincode, shard_host, store_name, address_line1, address_line2, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
                   [req.params._id]
                 );
                 if (Array.isArray(storeRows)) {
@@ -251,7 +251,7 @@ app.get(
                 }
               } catch (e: any) {
                 const [storeRows] = await connection.execute(
-                  'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+                  'SELECT id, store_name, address_line1, address_line2, pincode, county, state, country FROM store WHERE seller_id = ?',
                   [req.params._id]
                 );
                 if (Array.isArray(storeRows)) {
@@ -308,7 +308,7 @@ app.get(
 
         try {
           const [storeRows] = await globalPool.execute(
-            'SELECT id, store_number, pincode, shard_host, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+            'SELECT id, store_number, pincode, shard_host, store_name, address_line1, address_line2, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
             [req.params._id]
           );
           if (Array.isArray(storeRows)) {
@@ -316,7 +316,7 @@ app.get(
           }
         } catch (e: any) {
           const [storeRows] = await globalPool.execute(
-            'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+            'SELECT id, store_name, address_line1, address_line2, pincode, county, state, country FROM store WHERE seller_id = ?',
             [req.params._id]
           );
           if (Array.isArray(storeRows)) {
@@ -354,16 +354,19 @@ app.post(
   verifyClerkToken,
   async (req: Request, res: Response) => {
     try {
-      const { storeId, sellerId, pincode, county, state, country } = req.body as {
+      const { storeId, sellerId, store_name, address_line1, address_line2, pincode, county, state, country } = req.body as {
         storeId: string;
         sellerId: string;
+        store_name: string;
+        address_line1: string;
+        address_line2?: string;
         pincode: string;
         county: string;
         state: string;
         country: string;
       };
-      if (!sellerId || !pincode || !county || !state || !country) {
-        res.status(400).json({ error: "All store fields are required" });
+      if (!sellerId || !store_name || !address_line1 || !pincode || !county || !state || !country) {
+        res.status(400).json({ error: "All required store fields are missing" });
         return;
       }
 
@@ -403,16 +406,16 @@ app.post(
         }
 
         await connection.execute(
-          'INSERT INTO store (id, seller_id, pincode, county, state, country) VALUES (?, ?, ?, ?, ?, ?)',
-          [Number(pincode), sellerId, pincode, county, state, country]
+          'INSERT INTO store (id, seller_id, store_name, address_line1, address_line2, pincode, county, state, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [Number(pincode), sellerId, store_name, address_line1, address_line2 ?? '', pincode, county, state, country]
         );
 
         try {
           const shardHost = ShardHelper.getShardHost(pincode);
           const nextStoreNumber = existingCount + 1;
           await connection.execute(
-            'INSERT INTO seller_stores (seller_id, store_number, pincode, shard_host, county, state, country) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [sellerId, nextStoreNumber, pincode, shardHost, county, state, country]
+            'INSERT INTO seller_stores (seller_id, store_number, pincode, shard_host, store_name, address_line1, address_line2, county, state, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [sellerId, nextStoreNumber, pincode, shardHost, store_name, address_line1, address_line2 ?? '', county, state, country]
           );
         } catch (e: any) {
           console.log(`seller_stores insert skipped (table may not exist): ${e.message}`);
@@ -718,13 +721,13 @@ app.get(
       let stores: any[] = [];
       try {
         const [storeRows] = await globalConn.execute(
-          'SELECT id, store_number, pincode, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+          'SELECT id, store_number, pincode, shard_host, store_name, address_line1, address_line2, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
           [adminId]
         );
         stores = (storeRows as any[]);
       } catch (e: any) {
         const [storeRows] = await globalConn.execute(
-          'SELECT id, pincode, county, state, country FROM store WHERE seller_id = ?',
+          'SELECT id, store_name, address_line1, address_line2, pincode, county, state, country FROM store WHERE seller_id = ?',
           [adminId]
         );
         stores = (storeRows as any[]).map((s: any) => ({ ...s, pincode: String(s.pincode) }));
