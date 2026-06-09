@@ -2,14 +2,12 @@ export interface Subscription {
     transactionId: string;
     orderId: string;
     paymentSignature: string;
-    activePlan: number;
     amount?: number;
-    storeAllotment?: number;
-    planSchemaList: planSchemaList; // Fixed: Changed from planSchemeList to planSchemaList to match Sanity schema
-}
-interface planSchemaList {
-    activeDate: Date;
-    expireDate: Date;
+    storeAllotment: number;
+    planSchemaList: {
+        activeDate: Date;
+        expireDate: Date;
+    };
 }
 
 export interface customerOrderType {

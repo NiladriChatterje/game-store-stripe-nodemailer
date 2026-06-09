@@ -2,13 +2,12 @@ export declare interface AdminFieldsType {
   _type?: string;
   _id: string;
   username: string | null | undefined;
-  geoPoint: {
+  geoPoint?: {
     lat: number;
     lng: number;
   };
   gstin?: string;
   phone?: number;
-  adminId: string | null | undefined;
   email: string | null | undefined;
   subscriptionPlan?: subscription[] | undefined | null;
   address: {
@@ -20,15 +19,14 @@ export declare interface AdminFieldsType {
 }
 
 type subscription = {
+  _key?: string;            // auto-generated DB row id (returned from MySQL)
   transactionId: string;
   orderId: string;
   paymentSignature: string;
-  activePlan?: number;
   amount?: number;
-  planSchemaList: planSchemaList; // Fixed: Changed from planSchemeList to planSchemaList to match Sanity schema
+  storeAllotment: number;   // number of stores the seller can configure under this plan
+  planSchemaList: {
+    activeDate: Date;
+    expireDate: Date;
+  };
 };
-
-interface planSchemaList {
-  activeDate: Date;
-  expireDate: Date;
-}
