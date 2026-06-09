@@ -1,11 +1,11 @@
 import { UserType } from "@declaration/UserType";
 import { EachMessagePayload, Kafka, Consumer } from "kafkajs";
 import { createClient as RedisClient } from 'redis';
-import { createClient as SanityClient } from '@sanity/client';
-import { sanityConfig } from "./utils";
+import { GLOBAL_DB_CONFIG } from "./utils/ShardRouter";
 import nodemailer from 'nodemailer'
 import dotenv from 'dotenv';
 import { uuidv4 } from "uuidv7";
+import mysql from 'mysql2/promise';
 dotenv.config();
 
 const kafka = new Kafka({
@@ -20,73 +20,102 @@ const nodemailerObj = nodemailer.createTransport({
     }
 });
 
-const sanityClient = SanityClient(sanityConfig);
+const pool = mysql.createPool({
+    ...GLOBAL_DB_CONFIG,
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 10
+});
+
 const redisClient = RedisClient({
     socket: {
         host: 'redis_storage',
         port: 6379
     }
 });
-
-const consumer: Consumer = kafka.consumer({
-    groupId: 'user-data-creation-consumer',
-    retry: {
-        restartOnFailure: async (e: Error) => Promise.resolve(true),
-        retries: 15
-    }
-});
 async function handleMessage({ partition, topic, message, heartbeat }: EachMessagePayload) {
     const UserPayload: UserType = JSON.parse(message.value.toString());
     console.log("<< user data >> :", UserPayload)
-    const createdUserDocument = await sanityClient.createIfNotExists({
-        _id: UserPayload._id,
-        _type: 'user',
-        username: UserPayload.username,
-        phone: UserPayload.phone,
-        email: UserPayload.email,
-        geoPoint: UserPayload.geoPoint,
-        address: UserPayload.address,
-    });
 
-    console.log("<< document created >> :", createdUserDocument);
+    // Insert or update user in MySQL
+    await pool.execute(
+        `INSERT INTO users (id, username, phone, email, geo_lat, geo_lng, address_pincode, address_county, address_country, address_state)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           username = VALUES(username),
+           phone = VALUES(phone),
+           email = VALUES(email),
+           geo_lat = VALUES(geo_lat),
+           geo_lng = VALUES(geo_lng),
+           address_pincode = VALUES(address_pincode),
+           address_county = VALUES(address_county),
+           address_country = VALUES(address_country),
+           address_state = VALUES(address_state)`,
+        [
+            UserPayload._id,
+            UserPayload.username,
+            UserPayload.phone || null,
+            UserPayload.email,
+            UserPayload.geoPoint?.lat ?? null,
+            UserPayload.geoPoint?.lng ?? null,
+            UserPayload.address?.pincode ?? null,
+            UserPayload.address?.county ?? null,
+            UserPayload.address?.country ?? null,
+            UserPayload.address?.state ?? null
+        ]
+    );
+    console.log("<< user created/updated in MySQL >>");
 
-    //if the user has a cart then only create the cart
-    if (UserPayload.cart.length != 0) {
-        const userCartDocument = await sanityClient.fetch(`*[_type=="user_cart" && user_id=="${UserPayload._id}"][0]`);
-        if (userCartDocument != null) {
-            await sanityClient.patch(userCartDocument._id).set({
-                cart: UserPayload.cart.map(item => ({
-                    product_reference: {
-                        _ref: item._id,
-                        _type: 'reference'
-                    }, _key: uuidv4(), cart_quantity: item.quantity
-                }))
-            }).commit()
+    // Handle cart if present
+    if (UserPayload.cart && UserPayload.cart.length > 0) {
+        const [existingCart] = await pool.execute(
+            'SELECT id FROM user_carts WHERE user_id = ?',
+            [UserPayload._id]
+        );
+        let cartId: string;
+        if ((existingCart as any[]).length > 0) {
+            cartId = (existingCart as any[])[0].id;
+            await pool.execute('DELETE FROM user_cart_items WHERE cart_id = ?', [cartId]);
         } else {
-            await sanityClient.create({
-                user_id: UserPayload._id,
-                cart: UserPayload.cart.map(item => ({
-                    product_reference: {
-                        _ref: item._id,
-                        _type: 'reference'
-                    }, _key: uuidv4(), cart_quantity: item.quantity
-                })),
-                _type: "user_cart"
-            })
+            cartId = uuidv4();
+            await pool.execute(
+                'INSERT INTO user_carts (id, user_id) VALUES (?, ?)',
+                [cartId, UserPayload._id]
+            );
         }
+        for (const item of UserPayload.cart) {
+            if (item._id && item.quantity) {
+                await pool.execute(
+                    'INSERT INTO user_cart_items (id, cart_id, product_id, quantity) VALUES (?, ?, ?, ?)',
+                    [uuidv4(), cartId, item._id, item.quantity]
+                );
+            }
+        }
+        console.log("<< user cart updated in MySQL >>");
     }
 
+    // Cache in Redis
     if (redisClient.isOpen) {
-        await redisClient.hSet(`hashSet:user:details`, createdUserDocument._id, JSON.stringify(createdUserDocument));
-        await redisClient.sAdd(`set:admin:id`, createdUserDocument._id);
-        await redisClient.hSet(`hashSet:user:cart`, createdUserDocument._id, JSON.stringify(UserPayload.cart))
+        const redisUserData = {
+            _id: UserPayload._id,
+            username: UserPayload.username,
+            email: UserPayload.email,
+            phone: UserPayload.phone,
+            geoPoint: UserPayload.geoPoint,
+            address: UserPayload.address
+        };
+        await redisClient.hSet(`hashSet:user:details`, UserPayload._id, JSON.stringify(redisUserData));
+        await redisClient.hSet(`hashSet:user:cart`, UserPayload._id, JSON.stringify(UserPayload.cart));
+        console.log("<< Redis updated for user >>");
     }
 
-    await nodemailerObj.sendMail({
-        from: 'ecartxvstore@gmail.com',
-        to: UserPayload.email,
-        subject: 'USER-ACCOUNT-CREATION',
-        html: `
+    // Send email notification
+    try {
+        await nodemailerObj.sendMail({
+            from: 'ecartxvstore@gmail.com',
+            to: UserPayload.email,
+            subject: 'USER-ACCOUNT-CREATION',
+            html: `
         <div>
         <p>${UserPayload.username}, your user account has been created successfully.<br />
         Enjoy shopping in our website.<br /><br /><br /></p>
@@ -105,29 +134,33 @@ async function handleMessage({ partition, topic, message, heartbeat }: EachMessa
             </section>
         </div>
         `
-    });
+        });
+    } catch (emailErr) {
+        console.error("Failed to send email:", emailErr);
+    }
 }
 async function main() {
     try {
         await redisClient.connect();
-        const consumer: Consumer = kafka.consumer({
-            groupId: 'create-user-group',
-            retry: {
-                restartOnFailure: async (e: Error) => true,
-                retries: 10
-            }
-        });
-
-        await consumer.connect();
-        await consumer.subscribe({
-            topic: 'user-create-topic'
-        });
-        consumer.run({
-            eachMessage: handleMessage
-        })
     } catch (e) {
-        console.log("<<error >> :", e.message);
+        console.log("<<redis connection failed>>", (e as Error)?.message);
     }
+
+    const consumer: Consumer = kafka.consumer({
+        groupId: 'create-user-group',
+        retry: {
+            restartOnFailure: async (e: Error) => true,
+            retries: 10
+        }
+    });
+
+    await consumer.connect();
+    await consumer.subscribe({
+        topic: 'user-create-topic'
+    });
+    consumer.run({
+        eachMessage: handleMessage
+    })
 }
 
 main().catch(console.error);

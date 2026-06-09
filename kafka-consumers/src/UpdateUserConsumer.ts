@@ -1,10 +1,10 @@
 import { UserType } from "@declaration/UserType";
 import { EachMessagePayload, Kafka, Consumer } from "kafkajs";
 import { createClient as RedisClient } from 'redis';
-import { createClient as SanityClient } from '@sanity/client';
-import { sanityConfig } from "./utils";
+import { GLOBAL_DB_CONFIG } from "./utils/ShardRouter";
 import nodemailer from 'nodemailer'
 import dotenv from 'dotenv';
+import mysql from 'mysql2/promise';
 dotenv.config();
 
 const kafka = new Kafka({
@@ -19,40 +19,69 @@ const nodemailerObj = nodemailer.createTransport({
     }
 });
 
-const sanityClient = SanityClient(sanityConfig);
-const redisClient = RedisClient({
-    url: 'redis://redis_storage:6379'
+const pool = mysql.createPool({
+    ...GLOBAL_DB_CONFIG,
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 10
 });
 
-const consumer: Consumer = kafka.consumer({
-    groupId: 'user-data-creation-consumer',
-    retry: {
-        restartOnFailure: async (e: Error) => Promise.resolve(true),
-        retries: 15
-    }
+const redisClient = RedisClient({
+    url: 'redis://redis_storage:6379'
 });
 async function handleMessage({ partition, topic, message, heartbeat }: EachMessagePayload) {
     const UserPayload: UserType = JSON.parse(message.value.toString());
     console.log("<< user data >> :", UserPayload)
-    const updatedUserDocument = await sanityClient.patch(UserPayload._id).set({
-        username: UserPayload.username,
-        phone: UserPayload.phone,
-        email: UserPayload.email,
-        geoPoint: UserPayload.geoPoint,
-        address: UserPayload.address,
-    }).commit();
 
-    console.log("<< document created >> :", updatedUserDocument);
+    // Update user in MySQL
+    await pool.execute(
+        `UPDATE users SET
+           username = ?,
+           phone = ?,
+           email = ?,
+           geo_lat = ?,
+           geo_lng = ?,
+           address_pincode = ?,
+           address_county = ?,
+           address_country = ?,
+           address_state = ?
+         WHERE id = ?`,
+        [
+            UserPayload.username,
+            UserPayload.phone || null,
+            UserPayload.email,
+            UserPayload.geoPoint?.lat ?? null,
+            UserPayload.geoPoint?.lng ?? null,
+            UserPayload.address?.pincode ?? null,
+            UserPayload.address?.county ?? null,
+            UserPayload.address?.country ?? null,
+            UserPayload.address?.state ?? null,
+            UserPayload._id
+        ]
+    );
+    console.log("<< user updated in MySQL >>");
+
+    // Cache in Redis
     if (redisClient.isOpen) {
-        await redisClient.hSet(`hashSet:user:details`, updatedUserDocument._id, JSON.stringify(updatedUserDocument));
-        await redisClient.sAdd(`set:admin:id`, updatedUserDocument._id);
+        const redisUserData = {
+            _id: UserPayload._id,
+            username: UserPayload.username,
+            email: UserPayload.email,
+            phone: UserPayload.phone,
+            geoPoint: UserPayload.geoPoint,
+            address: UserPayload.address
+        };
+        await redisClient.hSet(`hashSet:user:details`, UserPayload._id, JSON.stringify(redisUserData));
+        console.log("<< Redis updated for user >>");
     }
 
-    await nodemailerObj.sendMail({
-        from: 'ecartxvstore@gmail.com',
-        to: UserPayload.email,
-        subject: 'USER-ACCOUNT-CREATION',
-        html: `
+    // Send email notification
+    try {
+        await nodemailerObj.sendMail({
+            from: 'ecartxvstore@gmail.com',
+            to: UserPayload.email,
+            subject: 'USER-PROFILE-UPDATE',
+            html: `
         <div>
         <p>${UserPayload.username}, Profile has been updated successfully!<br /><br /><br /></p>
         ${UserPayload.phone ? '' :
@@ -70,29 +99,33 @@ async function handleMessage({ partition, topic, message, heartbeat }: EachMessa
             </section>
         </div>
         `
-    });
+        });
+    } catch (emailErr) {
+        console.error("Failed to send email:", emailErr);
+    }
 }
 async function main() {
     try {
         await redisClient.connect();
-        const consumer: Consumer = kafka.consumer({
-            groupId: 'update-user-group',
-            retry: {
-                restartOnFailure: async (e: Error) => true,
-                retries: 10
-            }
-        });
-
-        await consumer.connect();
-        await consumer.subscribe({
-            topic: 'user-update-topic'
-        });
-        consumer.run({
-            eachMessage: handleMessage
-        })
     } catch (e) {
-        console.log("<<error >> :", e.message);
+        console.log("<<redis connection failed>>", (e as Error)?.message);
     }
+
+    const consumer: Consumer = kafka.consumer({
+        groupId: 'update-user-group',
+        retry: {
+            restartOnFailure: async (e: Error) => true,
+            retries: 10
+        }
+    });
+
+    await consumer.connect();
+    await consumer.subscribe({
+        topic: 'user-update-topic'
+    });
+    consumer.run({
+        eachMessage: handleMessage
+    })
 }
 
 main().catch(console.error);
