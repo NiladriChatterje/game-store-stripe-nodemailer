@@ -91,15 +91,24 @@ async function init() {
 
             console.log('[SubscriptionConsumers] Processing subscription for seller:', _id);
 
-            // Verify the seller exists in the sellers table (foreign key constraint check)
+            // Verify the seller exists in the sellers table (foreign key constraint check).
+            // If not, create a minimal record — the CreateAdminConsumer will fill in the
+            // full details later via ON DUPLICATE KEY UPDATE when it processes.
+            // This avoids a race condition where the user buys a subscription before the
+            // profile creation Kafka message has been consumed.
             const [sellerRows]: any = await pool.execute(
                 'SELECT id FROM sellers WHERE id = ?',
                 [_id]
             );
 
             if (!Array.isArray(sellerRows) || sellerRows.length === 0) {
-                console.warn(`[SubscriptionConsumers] SKIPPING: Seller ${_id} does not exist in sellers table. Foreign key would fail.`);
-                return;
+                console.log(`[SubscriptionConsumers] Creating minimal seller record for ${_id} (will be enriched by CreateAdminConsumer later)`);
+                await pool.execute(
+                    `INSERT INTO sellers (id, username, email, created_at, updated_at)
+                     VALUES (?, 'Unknown', ?, NOW(), NOW())
+                     ON DUPLICATE KEY UPDATE updated_at = NOW()`,
+                    [_id, `pending-${_id}@placeholder.local`]
+                );
             }
 
             // 1. Get the latest expiry date for this seller
