@@ -462,22 +462,27 @@ app.patch(
       return;
     }
 
-    res.sendStatus(401);
+    // Admin not found — this is a new admin; fall through to create
+    res.locals.isNewAdmin = true;
+    next();
   },
   async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
     const adminPayload: AdminFieldsType = req.body;
+    const isNew = res.locals.isNewAdmin === true;
+    const topic = isNew ? "admin-create-topic" : "admin-update-topic";
+
     const producer = kafka.producer();
     try {
       await producer.connect();
 
       await producer.send({
-        topic: "admin-update-topic",
+        topic,
         messages: [{ value: JSON.stringify(adminPayload) }],
       });
-      res.status(200).json({ message: 'Update queued' });
+      res.status(200).json({ message: isNew ? 'Account creation queued' : 'Update queued' });
     } catch (err) {
-      console.error('Error updating admin info:', err);
-      res.status(500).json({ error: 'Failed to update admin' });
+      console.error('Error sending admin info to Kafka:', err);
+      res.status(500).json({ error: 'Failed to process admin info' });
     } finally {
       await producer.disconnect().catch(() => {});
     }
