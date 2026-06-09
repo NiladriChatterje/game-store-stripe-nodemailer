@@ -135,6 +135,36 @@ function checkSubscriptionValidity(adminData: AdminFieldsType | null): boolean {
 }
 //#endregion
 
+//#region Helper to fetch stores for a seller (shared by Redis & MySQL fetch paths)
+async function fetchStoresForSeller(sellerId: string): Promise<any[]> {
+  try {
+    const [storeRows] = await globalPool.execute(
+      'SELECT id, store_number, pincode, shard_host, store_name, address_line1, address_line2, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
+      [sellerId]
+    );
+    if (Array.isArray(storeRows)) {
+      return storeRows as any[];
+    }
+  } catch {
+    // seller_stores table may not exist; fall back to legacy store table
+  }
+
+  try {
+    const [storeRows] = await globalPool.execute(
+      'SELECT id, store_name, address_line1, address_line2, pincode, county, state, country FROM store WHERE seller_id = ?',
+      [sellerId]
+    );
+    if (Array.isArray(storeRows)) {
+      return storeRows as any[];
+    }
+  } catch {
+    // legacy store table may not exist either
+  }
+
+  return [];
+}
+//#endregion
+
 //#region ENDPOINTS
 //ping self to keep server awake
 app.get("/", (req: Request, res: Response) => {
@@ -195,6 +225,12 @@ app.get(
           const adminData = JSON.parse(result);
           let isPlanActive = false;
 
+          // Fetch stores from MySQL — always needed regardless of where subscription data comes from
+          const stores = await fetchStoresForSeller(req.params._id);
+          if (stores.length > 0) {
+            adminData.stores = stores;
+          }
+
           if (subscriptionPlan) {
             const planData = JSON.parse(subscriptionPlan);
             const planExpireDate = planData.planExpireDate;
@@ -206,6 +242,8 @@ app.get(
               if (!adminData.subscriptionPlan || adminData.subscriptionPlan.length === 0) {
                 adminData.subscriptionPlan = [{
                   transactionId: planData.transactionId,
+                  orderId: planData.orderId,
+                  paymentSignature: planData.paymentSignature,
                   amount: planData.amount,
                   storeAllotment: planData.storeAllotment ?? 1,
                   planSchemaList: {
@@ -231,6 +269,8 @@ app.get(
                 adminData.subscriptionPlan = subRows.map((sub: any) => ({
                   _key: sub.id,
                   transactionId: sub.transaction_id,
+                  orderId: sub.order_id,
+                  paymentSignature: sub.payment_signature,
                   amount: sub.amount,
                   storeAllotment: sub.store_allotment ?? 1,
                   planSchemaList: {
@@ -240,29 +280,16 @@ app.get(
                 }));
                 isPlanActive = checkSubscriptionValidity(adminData);
               }
-
-              try {
-                const [storeRows] = await connection.execute(
-                  'SELECT id, store_number, pincode, shard_host, store_name, address_line1, address_line2, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
-                  [req.params._id]
-                );
-                if (Array.isArray(storeRows)) {
-                  adminData.stores = storeRows;
-                }
-              } catch (e: any) {
-                const [storeRows] = await connection.execute(
-                  'SELECT id, store_name, address_line1, address_line2, pincode, county, state, country FROM store WHERE seller_id = ?',
-                  [req.params._id]
-                );
-                if (Array.isArray(storeRows)) {
-                  adminData.stores = storeRows;
-                }
-              }
             } finally {
               await connection.end();
             }
           }
-          res.json({ ...adminData, isPlanActive });
+
+          const freshResponse = { ...adminData, isPlanActive };
+          res.json(freshResponse);
+
+          // Refresh Redis cache with stores included (fire-and-forget)
+          redisClient.hSet("hashSet:admin:details", req.params._id, JSON.stringify(freshResponse)).catch(() => {});
           return;
         }
       }
@@ -276,12 +303,13 @@ app.get(
           _id: row.id,
           _type: 'admin',
           username: row.username,
+          gstin: row.gstin,
           email: row.email,
           phone: row.phone,
-          geoPoint: {
+          geoPoint: row.geo_lat != null && row.geo_lng != null ? {
             lat: row.geo_lat,
             lng: row.geo_lng
-          },
+          } : undefined,
           address: {
             pincode: row.address_pincode,
             county: row.address_county,
@@ -297,6 +325,8 @@ app.get(
           result.subscriptionPlan = subRows.map((sub: any) => ({
             _key: sub.id,
             transactionId: sub.transaction_id,
+            orderId: sub.order_id,
+            paymentSignature: sub.payment_signature,
             amount: sub.amount,
             storeAllotment: sub.store_allotment ?? 1,
             planSchemaList: {
@@ -306,22 +336,10 @@ app.get(
           }));
         }
 
-        try {
-          const [storeRows] = await globalPool.execute(
-            'SELECT id, store_number, pincode, shard_host, store_name, address_line1, address_line2, county, state, country FROM seller_stores WHERE seller_id = ? ORDER BY store_number',
-            [req.params._id]
-          );
-          if (Array.isArray(storeRows)) {
-            result.stores = storeRows;
-          }
-        } catch (e: any) {
-          const [storeRows] = await globalPool.execute(
-            'SELECT id, store_name, address_line1, address_line2, pincode, county, state, country FROM store WHERE seller_id = ?',
-            [req.params._id]
-          );
-          if (Array.isArray(storeRows)) {
-            result.stores = storeRows;
-          }
+        // Use the shared fetchStoresForSeller helper for consistency
+        const stores = await fetchStoresForSeller(req.params._id);
+        if (stores.length > 0) {
+          result.stores = stores;
         }
       }
 
@@ -410,19 +428,49 @@ app.post(
           [Number(pincode), sellerId, store_name, address_line1, address_line2 ?? '', pincode, county, state, country]
         );
 
+        const shardHost = ShardHelper.getShardHost(pincode);
+        const nextStoreNumber = existingCount + 1;
+        let sellerStoresInserted = false;
+
         try {
-          const shardHost = ShardHelper.getShardHost(pincode);
-          const nextStoreNumber = existingCount + 1;
           await connection.execute(
             'INSERT INTO seller_stores (seller_id, store_number, pincode, shard_host, store_name, address_line1, address_line2, county, state, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [sellerId, nextStoreNumber, pincode, shardHost, store_name, address_line1, address_line2 ?? '', county, state, country]
           );
+          sellerStoresInserted = true;
         } catch (e: any) {
           console.log(`seller_stores insert skipped (table may not exist): ${e.message}`);
         }
 
+        // Update Redis cache with the new store — avoids a MySQL round trip on next fetch
         if (redisClient.isOpen) {
-          await redisClient.hDel("hashSet:admin:details", sellerId);
+          try {
+            const existingJson = await redisClient.hGet("hashSet:admin:details", sellerId);
+            if (existingJson) {
+              const adminData = JSON.parse(existingJson);
+              const stores = adminData.stores ?? [];
+              const newStore: Record<string, any> = {
+                id: Number(pincode),
+                pincode,
+                store_name,
+                address_line1,
+                address_line2: address_line2 ?? '',
+                county,
+                state,
+                country,
+              };
+              if (sellerStoresInserted) {
+                newStore.store_number = nextStoreNumber;
+                newStore.shard_host = shardHost;
+              }
+              stores.push(newStore);
+              adminData.stores = stores;
+              await redisClient.hSet("hashSet:admin:details", sellerId, JSON.stringify(adminData));
+              console.log(`[configure-store] Redis cache updated with new store for ${sellerId}`);
+            }
+          } catch (redisErr) {
+            console.warn('[configure-store] Failed to update Redis cache:', redisErr);
+          }
         }
 
         res.status(201).json({ message: "Store configured successfully", storeId: Number(storeId), maxAllotment, existingCount: Math.min(maxAllotment, existingCount + 1) });
@@ -442,29 +490,51 @@ app.patch(
   "/update-admin-info",
   verifyClerkToken,
   async (req: Request<{}, {}, AdminFieldsType>, res: Response, next: NextFunction) => {
-    if (redisClient.isOpen) {
-      if (await redisClient.sIsMember('set:admin:id', req.body._id)) {
+    try {
+      if (redisClient.isOpen) {
+        if (await redisClient.sIsMember('set:admin:id', req.body._id)) {
+          next();
+          return;
+        }
+      }
+      // Check MySQL global DB — try the raw _id first
+      const [adminRows] = await globalPool.execute(
+        'SELECT id FROM sellers WHERE id = ?',
+        [req.body._id]
+      );
+
+      if (Array.isArray(adminRows) && adminRows.length > 0) {
+        if (redisClient.isOpen) {
+          await redisClient.sAdd('set:admin:id', req.body._id);
+        }
         next();
         return;
       }
-    }
-    // Check MySQL global DB instead of Sanity
-    const [adminRows] = await globalPool.execute(
-      'SELECT id FROM sellers WHERE id = ?',
-      [req.body._id]
-    );
 
-    if (Array.isArray(adminRows) && adminRows.length > 0) {
-      if (redisClient.isOpen) {
-        await redisClient.sAdd('set:admin:id', req.body._id);
+      // Fallback: try with seller- prefix (DB stores IDs as seller-{ClerkId})
+      // This handles the case where the frontend sends the raw Clerk ID without the prefix.
+      if (!req.body._id.startsWith('seller-')) {
+        const prefixedId = `seller-${req.body._id}`;
+        const [prefixedRows] = await globalPool.execute(
+          'SELECT id FROM sellers WHERE id = ?',
+          [prefixedId]
+        );
+        if (Array.isArray(prefixedRows) && prefixedRows.length > 0) {
+          if (redisClient.isOpen) {
+            await redisClient.sAdd('set:admin:id', prefixedId);
+          }
+          next();
+          return;
+        }
       }
-      next();
-      return;
-    }
 
-    // Admin not found — this is a new admin; fall through to create
-    res.locals.isNewAdmin = true;
-    next();
+      // Admin not found — this is a new admin; fall through to create
+      res.locals.isNewAdmin = true;
+      next();
+    } catch (e) {
+      console.error('Error checking admin existence in /update-admin-info:', e);
+      res.status(500).json({ error: 'Failed to verify admin status' });
+    }
   },
   async (req: Request<{}, {}, AdminFieldsType>, res: Response) => {
     const adminPayload: AdminFieldsType = req.body;

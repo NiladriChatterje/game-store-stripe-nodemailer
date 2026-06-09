@@ -48,13 +48,6 @@ async function createAdmin() {
     const adminId = `seller-${user._id}`;
 
     try {
-      // Check if seller already exists
-      const [rows] = await pool.execute('SELECT id FROM sellers WHERE id = ?', [adminId]);
-      if (Array.isArray(rows) && rows.length > 0) {
-        console.log(`Seller ${user.username} (ID: ${adminId}) already exists. Skipping creation.`);
-        return;
-      }
-
       await pool.execute(
         `INSERT INTO sellers 
               (id, username, gstin, email, phone, geo_lat, geo_lng, address_pincode, address_county, address_state, address_country) 
@@ -91,6 +84,7 @@ async function createAdmin() {
         _id: adminId,
         _type: 'admin',
         username: user.username,
+        gstin: user.gstin,
         email: user.email,
         phone: user.phone,
         geoPoint: user.geoPoint,
