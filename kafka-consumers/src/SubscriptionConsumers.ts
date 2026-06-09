@@ -77,7 +77,7 @@ async function init() {
         try {
             const payload = message.value ? JSON.parse(message.value.toString()) : null;
             console.log('[SubscriptionConsumers] RECV: message on admin-subscriptions-topic');
-            let { _id, subscriptionPlan } = payload;
+            let { _id, username, email, subscriptionPlan } = payload;
 
             if (!_id || !subscriptionPlan) {
                 console.log('[SubscriptionConsumers] Skipping message: missing _id or subscriptionPlan');
@@ -103,11 +103,18 @@ async function init() {
 
             if (!Array.isArray(sellerRows) || sellerRows.length === 0) {
                 console.log(`[SubscriptionConsumers] Creating minimal seller record for ${_id} (will be enriched by CreateAdminConsumer later)`);
+                const sellerUsername = username || 'Unknown';
+                // Use the actual email from Clerk if available; otherwise fabricate a placeholder
+                const sellerEmail = email || (
+                    username
+                        ? `${username?.toLowerCase().replace(/\s+/g, '.')}-${_id}@placeholder.local`
+                        : `pending-${_id}@placeholder.local`
+                );
                 await pool.execute(
                     `INSERT INTO sellers (id, username, email, created_at, updated_at)
-                     VALUES (?, 'Unknown', ?, NOW(), NOW())
+                     VALUES (?, ?, ?, NOW(), NOW())
                      ON DUPLICATE KEY UPDATE updated_at = NOW()`,
-                    [_id, `pending-${_id}@placeholder.local`]
+                    [_id, sellerUsername, sellerEmail]
                 );
             }
 

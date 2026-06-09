@@ -106,12 +106,12 @@ const app: Express = express();
         async (req: Request<{}, {}, { _id: string, subscriptionPlan: Subscription }>, res: Response) => {
             const producer: Producer = kafka.producer();
             try {
-                const { _id, subscriptionPlan } = req.body;
+                const { _id, username, email, subscriptionPlan } = req.body;
                 await producer.connect();
                 await producer.send(
                     {
                         topic: 'admin-subscriptions-topic',
-                        messages: [{ value: JSON.stringify({ _id, subscriptionPlan }) }]
+                        messages: [{ value: JSON.stringify({ _id, username, email, subscriptionPlan }) }]
                     }
                 );
                 console.log("<< Subscription added to kafka >>")
