@@ -310,6 +310,126 @@ async function main() {
   );
 
   app.get(
+    "/fetch-product/:productId",
+    async (req: Request<{ productId: string }>, res: Response) => {
+      res.setHeader("Content-Type", "application/json");
+      const { productId } = req.params;
+
+      if (!productId) {
+        res.status(400).json({ error: "Missing productId" });
+        return;
+      }
+
+      try {
+        // Check Redis cache first
+        if (redisClient.isOpen) {
+          const fromRedisResult = await redisClient.hGet('products:details', productId);
+          if (fromRedisResult) {
+            res.status(200).json([JSON.parse(fromRedisResult)]);
+            return;
+          }
+        }
+
+        // Search across ALL shards since we don't have a pincode
+        const shardQueries = shardPools.map(async (pool, idx) => {
+          try {
+            const [productRows] = await pool.execute(
+              'SELECT * FROM products WHERE id = ?',
+              [productId]
+            );
+            return { shardIndex: idx, rows: productRows as any[] };
+          } catch (err) {
+            return { shardIndex: idx, rows: [] };
+          }
+        });
+
+        const shardResults = await Promise.all(shardQueries);
+
+        // Find the shard that has the product
+        let foundProduct: any = null;
+        let foundShardIndex = -1;
+
+        for (const result of shardResults) {
+          if (Array.isArray(result.rows) && result.rows.length > 0) {
+            foundProduct = result.rows[0];
+            foundShardIndex = result.shardIndex;
+            break;
+          }
+        }
+
+        if (!foundProduct) {
+          res.status(404).json({ error: "Product not found" });
+          return;
+        }
+
+        const mysqlPool = shardPools[foundShardIndex];
+
+        // Fetch quantity from seller_product_details
+        const [quantityRows] = await mysqlPool.execute(
+          'SELECT quantity, pincode FROM seller_product_details WHERE product_id = ? LIMIT 1',
+          [productId]
+        );
+
+        const quantity = (quantityRows as any[])[0]?.quantity || 0;
+        const pincode = (quantityRows as any[])[0]?.pincode || '';
+
+        // Fetch images
+        const [imageRows] = await mysqlPool.execute(
+          'SELECT size, `base64`, extension FROM product_images WHERE product_id = ?',
+          [productId]
+        );
+
+        const imagesBase64 = Array.isArray(imageRows)
+          ? (imageRows as any[]).map((img: any) => ({
+            size: img.size,
+            base64: img.base64,
+            extension: img.extension
+          }))
+          : [];
+
+        // Fetch keywords
+        const [keywordRows] = await mysqlPool.execute(
+          'SELECT keyword FROM product_keywords WHERE product_id = ?',
+          [productId]
+        );
+        const keywords = Array.isArray(keywordRows)
+          ? (keywordRows as any[]).map((k: any) => k.keyword)
+          : [];
+
+        const result = {
+          _id: foundProduct.id,
+          productName: foundProduct.product_name,
+          category: foundProduct.category,
+          eanUpcNumber: foundProduct.ean_upc_number,
+          eanUpcIsbnGtinAsinType: foundProduct.ean_upc_type,
+          price: {
+            pdtPrice: foundProduct.price_amount,
+            discountPercentage: foundProduct.price_discount_percentage,
+            currency: foundProduct.price_currency || 'INR'
+          },
+          quantity,
+          pincode,
+          keywords,
+          productDescription: foundProduct.product_description,
+          modelNumber: foundProduct.model_number,
+          imagesBase64
+        };
+
+        // Cache to Redis for future lookups
+        if (redisClient.isOpen) {
+          await redisClient.hSet('products:details', productId, JSON.stringify(result)).catch(() => {});
+        }
+
+        // Return as array to match frontend expectations
+        res.status(200).json([result]);
+      } catch (err) {
+        console.error("Fetch product error:", err);
+        res.status(502).json({ error: "Service error!" });
+      }
+    }
+  );
+
+  app.get(
     "/fetch-product-quantity/:pincode/:productId",
     async (req: Request<{ productId: string; pincode: string }>, res: Response, next: NextFunction) => {
       const { productId, pincode } = req.params;
