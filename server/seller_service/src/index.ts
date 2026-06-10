@@ -900,12 +900,18 @@ app.get(
       });
 
       const productsByPincode = new Map<string, any[]>();
+      // Track which shard each pincode's products were found in
+      const shardByPincode = new Map<string, string>();
 
-      shardResults.forEach(({ rows }) => {
+      shardResults.forEach(({ shardHost, rows }) => {
         (rows as any[]).forEach((row: any) => {
           const pc = String(row.pincode);
           if (!productsByPincode.has(pc)) {
             productsByPincode.set(pc, []);
+          }
+          // Record the shard this pincode maps to (first occurrence wins)
+          if (!shardByPincode.has(pc)) {
+            shardByPincode.set(pc, shardHost);
           }
 
           const existing = productsByPincode.get(pc)!;
@@ -949,12 +955,14 @@ app.get(
               id: store.id,
               store_number: store.store_number || 0,
               pincode,
+              shard_host: store.shard_host || shardByPincode.get(pincode) || '',
               county: store.county,
               state: store.state,
               country: store.country
             } : {
               id: Number(pincode),
               pincode,
+              shard_host: shardByPincode.get(pincode) || '',
               county: '',
               state: '',
               country: ''
@@ -970,6 +978,7 @@ app.get(
               id: store.id,
               store_number: store.store_number || 0,
               pincode,
+              shard_host: store.shard_host || '',
               county: store.county,
               state: store.state,
               country: store.country
