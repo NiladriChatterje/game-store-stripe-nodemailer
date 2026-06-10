@@ -144,10 +144,10 @@ async function main() {
                     ]
                 );
             } else {
-                // If exists, increment quantity
+                // Update — SET quantity directly (do NOT add to existing)
                 const currentInventory = (inventoryCheck as any[])[0];
                 const detailId = currentInventory.id;
-                totalQuantity = currentInventory.quantity + productPayload.quantity;
+                totalQuantity = productPayload.quantity;
 
                 await mysqlPool.execute(
                     'UPDATE seller_product_details SET quantity = ?, geo_lat = ?, geo_lng = ? WHERE id = ?',
