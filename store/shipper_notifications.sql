@@ -27,5 +27,5 @@ CREATE TABLE IF NOT EXISTS shipper_notifications (
     INDEX idx_created (created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Add address_pincode index on shippers table for fast pincode lookup (if not already present)
-CREATE INDEX IF NOT EXISTS idx_shippers_pincode ON shippers (address_pincode);
+-- Add address_pincode index on shippers table for fast pincode lookup
+CREATE INDEX idx_shippers_pincode ON shippers (address_pincode);
