@@ -205,5 +205,22 @@ export default {
                 PM2_SILENT: 'true'
             },
         },
+        {
+            name: 'update-shipper-consumer',
+            script: 'src/UpdateShipperConsumer.ts',
+            interpreter: 'tsx',
+            instances: 1,
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/update-shipper-consumer-error.log',
+            out_file: 'logs/update-shipper-consumer-out.log',
+            env: {
+                NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
+            },
+        },
     ],
 };

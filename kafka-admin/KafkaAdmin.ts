@@ -225,6 +225,20 @@ async function admin() {
         timeout: 60000,
       });
 
+    // shipper-update-topic: Shipper profile updates from profile manager
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "shipper-update-topic",
+            numPartitions: 6,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      });
+
     // await admin
     //   .deleteTopics({ topics: ["product-topic", "product-db-save-topic"] })
 

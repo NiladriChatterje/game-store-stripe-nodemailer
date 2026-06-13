@@ -822,7 +822,7 @@ const kafka = new Kafka({
 
     //#region SHIPPER PROFILE MANAGEMENT
 
-    // PATCH /update-shipper-info — update shipper profile fields
+    // PATCH /update-shipper-info — update shipper profile fields (direct DB + Kafka)
     app.patch(
         "/update-shipper-info",
         verifyClerkToken,
@@ -839,6 +839,10 @@ const kafka = new Kafka({
                 state?: string;
             };
         }>, res: Response) => {
+            const producer = kafka.producer({
+                allowAutoTopicCreation: false,
+                transactionTimeout: 30000,
+            });
             try {
                 const { _id, shippername, phone, email, geoPoint, address } = req.body;
 
@@ -897,12 +901,30 @@ const kafka = new Kafka({
 
                 params.push(_id);
 
+                // 1. Direct DB update (synchronous — immediate response)
                 await globalPool.execute(
                     `UPDATE shippers SET ${updateFields.join(', ')} WHERE id = ?`,
                     params
                 );
 
                 console.log(`<Shipper ${_id} profile updated successfully>`);
+
+                // 2. Publish to Kafka for async consumers
+                await producer.connect();
+                await producer.send({
+                    topic: 'shipper-update-topic',
+                    messages: [{
+                        value: JSON.stringify({
+                            _id,
+                            shippername,
+                            phone,
+                            email,
+                            geoPoint,
+                            address
+                        })
+                    }]
+                });
+                console.log(`<Shipper ${_id} update published to shipper-update-topic>`);
 
                 // Invalidate any cached shipper data in Redis
                 if (redisClient.isOpen) {
@@ -947,6 +969,8 @@ const kafka = new Kafka({
             } catch (e: Error | any) {
                 console.error('Error updating shipper profile:', e);
                 res.status(500).json({ error: 'Failed to update shipper profile', details: e.message });
+            } finally {
+                await producer.disconnect().catch(() => {});
             }
         }
     );
