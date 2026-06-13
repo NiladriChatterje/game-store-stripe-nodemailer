@@ -155,18 +155,27 @@ async function main() {
       await kafkaProducer.connect();
 
       if (assignedSellers.length > 0) {
+        // Track unique sellers for seller_to_shards update
+        const sellerIdsForShard = new Set<string>();
+
+        // Use the same shard pool as inventory — seller_orders lives alongside products
+        const shardHost = `mysql${shardIndex + 1}`;
+
         // Create seller_orders + seller_order_items and decrement stock
         for (const assignment of assignedSellers) {
           const sellerOrderId = uuid();
+          sellerIdsForShard.add(assignment.sellerId);
 
-          await globalPool.execute(
+          // Write seller_orders to the CORRECT SHARD (not globalPool)
+          await inventoryPool.execute(
             `INSERT INTO seller_orders (
-              id, order_id, seller_id, status, total_amount, is_partial_fulfillment, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              id, order_id, seller_id, pincode, status, total_amount, is_partial_fulfillment, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               sellerOrderId,
               createdOrderId,
               assignment.sellerId,
+              pincodeStr,
               "pending",
               assignment.amount,
               isPartialFulfillment ? 1 : 0,
@@ -176,7 +185,8 @@ async function main() {
             ] as any[]
           );
 
-          await globalPool.execute(
+          // Write seller_order_items to the CORRECT SHARD
+          await inventoryPool.execute(
             `INSERT INTO seller_order_items (
               seller_order_id, product_id, quantity, price
             ) VALUES (?, ?, ?, ?)`,
@@ -220,6 +230,20 @@ async function main() {
               },
             ],
           });
+        }
+
+        // Track seller → shard mapping so getSellerShards() can find data
+        if (sellerIdsForShard.size > 0) {
+          try {
+            for (const sid of sellerIdsForShard) {
+              await globalPool.execute(
+                `INSERT IGNORE INTO seller_to_shards (seller_id, shard_host) VALUES (?, ?)`,
+                [sid, shardHost]
+              );
+            }
+          } catch (e) {
+            console.warn(`[seller_to_shards tracking] failed: ${e}`);
+          }
         }
 
         if (isPartialFulfillment) {
