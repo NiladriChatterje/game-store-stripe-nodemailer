@@ -103,7 +103,6 @@ services:
       - "3306:3306"
     volumes:
       - mysql1_data:/var/lib/mysql
-      - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
@@ -122,7 +121,6 @@ services:
       - "3307:3306"
     volumes:
       - mysql2_data:/var/lib/mysql
-      - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
@@ -141,7 +139,6 @@ services:
       - "3308:3306"
     volumes:
       - mysql3_data:/var/lib/mysql
-      - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
@@ -160,7 +157,6 @@ services:
       - "3309:3306"
     volumes:
       - mysql4_data:/var/lib/mysql
-      - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
@@ -179,7 +175,6 @@ services:
       - "3310:3306"
     volumes:
       - mysql5_data:/var/lib/mysql
-      - ./store/orders.sql:/docker-entrypoint-initdb.d/orders.sql
       - ./store/seller_product_details.sql:/docker-entrypoint-initdb.d/seller_product_details.sql
       - ./store/store.sql:/docker-entrypoint-initdb.d/store.sql
       - ./store/products_shard.sql:/docker-entrypoint-initdb.d/products_shard.sql
@@ -201,8 +196,9 @@ services:
       - ./store/users.sql:/docker-entrypoint-initdb.d/01_users.sql
       - ./store/sellers.sql:/docker-entrypoint-initdb.d/02_sellers.sql
       - ./store/shippers.sql:/docker-entrypoint-initdb.d/03_shippers.sql
-      - ./store/cart.sql:/docker-entrypoint-initdb.d/04_cart.sql
-      - ./store/shipper_notifications.sql:/docker-entrypoint-initdb.d/05_shipper_notifications.sql
+      - ./store/orders.sql:/docker-entrypoint-initdb.d/04_orders.sql
+      - ./store/cart.sql:/docker-entrypoint-initdb.d/05_cart.sql
+      - ./store/shipper_notifications.sql:/docker-entrypoint-initdb.d/06_shipper_notifications.sql
     mem_limit: 512m
     cpus: 0.5
 
