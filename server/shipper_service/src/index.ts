@@ -818,8 +818,140 @@ const kafka = new Kafka({
         }
     );
 
-    //#endregion 
+    //#endregion
 
+    //#region SHIPPER PROFILE MANAGEMENT
+
+    // PATCH /update-shipper-info — update shipper profile fields
+    app.patch(
+        "/update-shipper-info",
+        verifyClerkToken,
+        async (req: Request<{}, {}, {
+            _id: string;
+            shippername?: string;
+            phone?: number;
+            email?: string;
+            geoPoint?: { lat?: number; lng?: number };
+            address?: {
+                pincode?: string;
+                county?: string;
+                country?: string;
+                state?: string;
+            };
+        }>, res: Response) => {
+            try {
+                const { _id, shippername, phone, email, geoPoint, address } = req.body;
+
+                if (!_id) {
+                    res.status(400).json({ error: 'Shipper ID (_id) is required' });
+                    return;
+                }
+
+                console.log(`<Updating shipper profile: ${_id}>`);
+
+                // Build dynamic UPDATE query (only set fields that are provided)
+                const updateFields: string[] = [];
+                const params: any[] = [];
+
+                if (shippername !== undefined) {
+                    updateFields.push('shippername = ?');
+                    params.push(shippername);
+                }
+                if (phone !== undefined) {
+                    updateFields.push('phone = ?');
+                    params.push(phone);
+                }
+                if (email !== undefined) {
+                    updateFields.push('email = ?');
+                    params.push(email);
+                }
+                if (geoPoint?.lat !== undefined) {
+                    updateFields.push('geo_lat = ?');
+                    params.push(geoPoint.lat);
+                }
+                if (geoPoint?.lng !== undefined) {
+                    updateFields.push('geo_lng = ?');
+                    params.push(geoPoint.lng);
+                }
+                if (address?.pincode !== undefined) {
+                    updateFields.push('address_pincode = ?');
+                    params.push(address.pincode);
+                }
+                if (address?.county !== undefined) {
+                    updateFields.push('address_county = ?');
+                    params.push(address.county);
+                }
+                if (address?.country !== undefined) {
+                    updateFields.push('address_country = ?');
+                    params.push(address.country);
+                }
+                if (address?.state !== undefined) {
+                    updateFields.push('address_state = ?');
+                    params.push(address.state);
+                }
+
+                if (updateFields.length === 0) {
+                    res.status(400).json({ error: 'No fields to update' });
+                    return;
+                }
+
+                params.push(_id);
+
+                await globalPool.execute(
+                    `UPDATE shippers SET ${updateFields.join(', ')} WHERE id = ?`,
+                    params
+                );
+
+                console.log(`<Shipper ${_id} profile updated successfully>`);
+
+                // Invalidate any cached shipper data in Redis
+                if (redisClient.isOpen) {
+                    await redisClient.hDel("hashSet:shipper:details", _id);
+                }
+
+                // Fetch the updated record to return
+                const [rows] = await globalPool.execute(
+                    `SELECT id, shippername, email, phone, geo_lat, geo_lng,
+                            address_pincode, address_county, address_country, address_state,
+                            created_at
+                     FROM shippers WHERE id = ?`,
+                    [_id]
+                );
+
+                const row = (rows as any[])[0];
+                if (!row) {
+                    res.status(404).json({ error: 'Shipper not found after update' });
+                    return;
+                }
+
+                const result = {
+                    _id: row.id,
+                    shippername: row.shippername,
+                    email: row.email,
+                    phone: row.phone,
+                    geo_lat: row.geo_lat,
+                    geo_lng: row.geo_lng,
+                    address: {
+                        pincode: row.address_pincode,
+                        county: row.address_county,
+                        country: row.address_country,
+                        state: row.address_state
+                    },
+                    createdAt: row.created_at
+                };
+
+                res.status(200).json({
+                    message: 'Profile updated successfully',
+                    shipper: result
+                });
+            } catch (e: Error | any) {
+                console.error('Error updating shipper profile:', e);
+                res.status(500).json({ error: 'Failed to update shipper profile', details: e.message });
+            }
+        }
+    );
+
+    //#endregion
 
 app.listen(process.env.PORT ?? 5004, () =>
     console.log("Shipper service listening on PORT:" + (process.env.PORT ?? 5004))

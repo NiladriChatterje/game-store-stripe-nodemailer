@@ -14,11 +14,7 @@ const pool = mysql.createPool({
     queueLimit: 10
 });
 
-interface ShipperPayload {
-    _id: string;
-    username: string;
-    email: string;
-}
+import type { CreateShipperConsumerPayload as ShipperPayload } from '@declaration/ShipperType.d.ts';
 
 async function handleMessage({ partition, topic, message, heartbeat }: EachMessagePayload) {
     const shipperPayload: ShipperPayload = JSON.parse(message.value.toString());
