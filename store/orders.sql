@@ -1,4 +1,10 @@
+-- ============================================================================
+-- GLOBAL DB SCHEMA — Run on global_sql_data only
+-- Tables moved to shard_schema.sql: seller_orders, seller_order_items
+-- ============================================================================
+
 USE xvstore;
+
 CREATE TABLE IF NOT EXISTS orders (
     id VARCHAR(255) PRIMARY KEY, -- Sanity Document ID
     order_id_display VARCHAR(255) NOT NULL, -- "orderId" field
@@ -23,30 +29,6 @@ CREATE TABLE IF NOT EXISTS order_products (
     product_id VARCHAR(255) NOT NULL,
     PRIMARY KEY (order_id, product_id),
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS seller_orders (
-    id VARCHAR(255) PRIMARY KEY,
-    order_id VARCHAR(255) NOT NULL,
-    seller_id VARCHAR(255) NOT NULL,
-    status ENUM('pending', 'accepted', 'rejected', 'processing', 'ready_to_ship') DEFAULT 'pending',
-    total_amount DECIMAL(10, 2) NOT NULL,
-    accepted_at DATETIME,
-    rejection_reason VARCHAR(255),
-    notes TEXT,
-    is_partial_fulfillment BOOLEAN DEFAULT FALSE,
-    fulfilled_at DATETIME,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS seller_order_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    seller_order_id VARCHAR(255) NOT NULL,
-    product_id VARCHAR(255) NOT NULL,
-    quantity INT NOT NULL,
-    price DECIMAL(10, 2) NOT NULL,
-    FOREIGN KEY (seller_order_id) REFERENCES seller_orders(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS refund_audits (

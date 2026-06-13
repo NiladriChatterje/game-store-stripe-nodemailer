@@ -52,6 +52,18 @@ const globalPool = mysql.createPool({
   queueLimit: 10
 });
 
+// Shard connection helper (mirrors PRODUCT_SHARDS_CONFIG from consumers)
+const SHARD_HOSTS = ['mysql1', 'mysql2', 'mysql3', 'mysql4', 'mysql5'];
+
+async function getShardConnection(shardHost: string): Promise<mysql.Connection> {
+  return mysql.createConnection({
+    host: shardHost,
+    port: 3306,
+    user: 'root',
+    database: 'xvstore'
+  });
+}
+
 try {
   await redisClient.connect();
 } catch (e: Error | any) {
@@ -565,16 +577,40 @@ app.get(
   verifyClerkToken,
   async (req: Request<{ _id: string }>, res: Response) => {
     try {
-      const [rows] = await globalPool.execute(
-        `SELECT p.id, p.product_name, p.category, p.price_amount, p.created_at
-         FROM products p
-         JOIN seller_product_details spd ON p.id = spd.product_id
-         WHERE spd.seller_id = ?
-         GROUP BY p.id
-         ORDER BY p.created_at DESC`,
-        [req.params._id]
-      );
-      res.status(200).send(rows);
+      const sellerId = req.params._id;
+      const sellerShards = await ShardHelper.getSellerShards(sellerId);
+
+      const shardQueries = sellerShards.map(async (shardHost) => {
+        const connection = await getShardConnection(shardHost);
+        try {
+          const [rows] = await connection.execute(
+            `SELECT p.id, p.product_name, p.category, p.price_amount, p.created_at
+             FROM products p
+             JOIN seller_product_details spd ON p.id = spd.product_id
+             WHERE spd.seller_id = ?
+             GROUP BY p.id
+             ORDER BY p.created_at DESC`,
+            [sellerId]
+          );
+          return rows;
+        } finally {
+          await connection.end();
+        }
+      });
+
+      const shardResults = await Promise.all(shardQueries);
+      // Deduplicate by product id (same product may appear across shards)
+      const seen = new Set<string>();
+      const merged: any[] = [];
+      for (const rows of shardResults) {
+        for (const row of (rows as any[])) {
+          if (!seen.has(row.id)) {
+            seen.add(row.id);
+            merged.push(row);
+          }
+        }
+      }
+      res.status(200).json(merged);
     } catch (error) {
       res.status(500).send(error);
     }
@@ -999,7 +1035,7 @@ app.get(
   }
 );
 
-// Fetch orders assigned to a seller
+// Fetch orders assigned to a seller (enhanced with pincode & shipping info)
 app.get(
   "/seller-orders/:sellerId",
   verifyClerkToken,
@@ -1020,22 +1056,60 @@ app.get(
         });
 
         try {
+          // First fetch pincode for each seller_order via seller_product_details
+          // Also fetch shipping assignments
           const [rows] = await connection.execute(`
             SELECT 
               so.id, so.order_id, so.seller_id, so.status,
               so.total_amount, so.is_partial_fulfillment, so.notes,
               so.accepted_at, so.rejection_reason, so.created_at,
-              soi.product_id, soi.quantity, soi.price
+              soi.product_id, soi.quantity, soi.price,
+              so.pincode
             FROM seller_orders so
             LEFT JOIN seller_order_items soi ON so.id = soi.seller_order_id
             WHERE so.seller_id = ?
             ORDER BY so.created_at DESC
           `, [sellerId]);
 
-          return { shardHost, rows: rows as any[] };
+          // Fetch shipping assignments from THE SAME SHARD
+          const orderIds = [...new Set((rows as any[]).map((r: any) => r.id).filter(Boolean))];
+          let shippingMap: Map<string, any[]> = new Map();
+          
+          if (orderIds.length > 0) {
+            try {
+              const placeholders = orderIds.map(() => '?').join(',');
+              const [shipRows]: any = await connection.execute(`
+                SELECT 
+                  id, seller_order_id, shipper_id, status as ship_status,
+                  assigned_at, shipped_at, delivered_at, notes as ship_notes
+                FROM seller_order_shipping
+                WHERE seller_order_id IN (${placeholders})
+                ORDER BY assigned_at DESC
+              `, orderIds);
+              
+              (shipRows as any[]).forEach((sr: any) => {
+                if (!shippingMap.has(sr.seller_order_id)) {
+                  shippingMap.set(sr.seller_order_id, []);
+                }
+                shippingMap.get(sr.seller_order_id)!.push({
+                  shippingId: sr.id,
+                  shipperId: sr.shipper_id,
+                  status: sr.ship_status,
+                  assignedAt: sr.assigned_at,
+                  shippedAt: sr.shipped_at,
+                  deliveredAt: sr.delivered_at,
+                  notes: sr.ship_notes
+                });
+              });
+            } catch (e) {
+              // table may not exist on this shard yet
+            }
+          }
+
+          return { shardHost, rows: rows as any[], shippingMap, shipperIds: new Set<string>() };
         } catch (err) {
           console.error(`Order fetch failed on ${shardHost}:`, err);
-          return { shardHost, rows: [] };
+          return { shardHost, rows: [], shippingMap: new Map() };
         } finally {
           await connection.end();
         }
@@ -1045,9 +1119,19 @@ app.get(
 
       const ordersMap = new Map();
 
-      shardResults.forEach(({ rows }) => {
+      // Collect all unique shipper IDs across all shards for name resolution
+      const allShipperIds = new Set<string>();
+      
+      shardResults.forEach(({ rows, shippingMap }) => {
         rows.forEach((row: any) => {
           if (!ordersMap.has(row.id)) {
+            const pincode = row.pincode || '';
+            const shippingRecords = shippingMap?.get(row.id) || [];
+            // Collect shipper IDs
+            shippingRecords.forEach((sr: any) => {
+              if (sr.shipperId) allShipperIds.add(sr.shipperId);
+            });
+            
             ordersMap.set(row.id, {
               _id: row.id,
               orderId: row.order_id,
@@ -1062,7 +1146,9 @@ app.get(
               acceptedAt: row.accepted_at,
               rejectionReason: row.rejection_reason,
               _createdAt: row.created_at,
-              products: []
+              pincode: pincode,
+              products: [],
+              shippers: shippingRecords
             });
           }
 
@@ -1079,13 +1165,489 @@ app.get(
         });
       });
 
-      const result = Array.from(ordersMap.values())
-        .sort((a: any, b: any) => new Date(b._createdAt).getTime() - new Date(a._createdAt).getTime());
+      // Resolve shipper names from global DB (shippers table stays global)
+      const shipperNameMap = new Map<string, { shippername: string; phone: string; email: string }>();
+      if (allShipperIds.size > 0) {
+        try {
+          const ids = Array.from(allShipperIds);
+          const placeholders = ids.map(() => '?').join(',');
+          const [nameRows]: any = await globalPool.execute(
+            `SELECT id, shippername, phone, email FROM shippers WHERE id IN (${placeholders})`,
+            ids
+          );
+          (nameRows as any[]).forEach((r: any) => {
+            shipperNameMap.set(r.id, { shippername: r.shippername, phone: r.phone, email: r.email });
+          });
+        } catch (e) {
+          console.warn('Failed to resolve shipper names:', e);
+        }
+      }
+
+      // Merge shipper names into results
+      const result = Array.from(ordersMap.values()).map((order: any) => ({
+        ...order,
+        shippers: order.shippers.map((s: any) => ({
+          ...s,
+          shipperName: shipperNameMap.get(s.shipperId)?.shippername || 'Unknown',
+          shipperPhone: shipperNameMap.get(s.shipperId)?.phone || '',
+          shipperEmail: shipperNameMap.get(s.shipperId)?.email || ''
+        }))
+      })).sort((a: any, b: any) => new Date(b._createdAt).getTime() - new Date(a._createdAt).getTime());
 
       console.log(`<Fetched ${result.length} orders for seller across ${sellerShards.length} shard(s)>`);
       res.status(200).json(result);
     } catch (err: any) {
       console.error("Error fetching seller orders:", err);
+      res.status(500).json({ error: "Internal server error", details: err.message });
+    }
+  }
+);
+
+// ---- SHIPPER MANAGEMENT ENDPOINTS ----
+
+// Fetch all registered shippers (for admin to select when assigning)
+app.get(
+  "/fetch-all-shippers",
+  verifyClerkToken,
+  async (req: Request, res: Response) => {
+    try {
+      const [rows] = await globalPool.execute(
+        'SELECT id, shippername, phone, email, geo_lat, geo_lng, address_pincode, address_county, address_country, address_state, created_at FROM shippers ORDER BY shippername'
+      );
+      res.status(200).json(rows);
+    } catch (err: any) {
+      console.error("Error fetching shippers:", err);
+      res.status(500).json({ error: "Internal server error", details: err.message });
+    }
+  }
+);
+
+// Assign a shipper to a seller_order (with products to ship)
+app.post(
+  "/assign-shipper",
+  verifyClerkToken,
+  async (req: Request, res: Response) => {
+    const { sellerOrderId, shipperId, orderId, sellerId, pincode, products, notes } = req.body as {
+      sellerOrderId: string;
+      shipperId: string;
+      orderId: string;
+      sellerId: string;
+      pincode?: string;
+      products: Array<{ productId: string; quantity: number }>;
+      notes?: string;
+    };
+
+    if (!sellerOrderId || !shipperId || !orderId || !sellerId || !products?.length) {
+      res.status(400).json({ error: "Missing required fields: sellerOrderId, shipperId, orderId, sellerId, products" });
+      return;
+    }
+
+    // Determine target shard from pincode (required for sharded seller_orders)
+    const targetPincode = pincode || '';
+    const shardHost = targetPincode ? ShardHelper.getShardHost(targetPincode) : null;
+
+    if (!shardHost) {
+      res.status(400).json({ error: "pincode is required to route to the correct shard" });
+      return;
+    }
+
+    const connection = await getShardConnection(shardHost);
+
+    try {
+      const { uuidv7 } = await import('uuidv7');
+      const shippingId = uuidv7();
+
+      // Insert shipping assignment into the seller's shard
+      await connection.execute(
+        `INSERT INTO seller_order_shipping (id, seller_order_id, shipper_id, order_id, seller_id, pincode, status, notes)
+         VALUES (?, ?, ?, ?, ?, ?, 'assigned', ?)`,
+        [shippingId, sellerOrderId, shipperId, orderId, sellerId, targetPincode, notes || null]
+      );
+
+      // Insert shipping items (which products are being shipped)
+      for (const item of products) {
+        await connection.execute(
+          `INSERT INTO seller_order_shipping_items (shipping_id, product_id, quantity)
+           VALUES (?, ?, ?)`,
+          [shippingId, item.productId, item.quantity]
+        );
+      }
+
+      // Send Kafka notification for real-time SSE update
+      const producer = kafka.producer();
+      await producer.connect();
+      try {
+        await producer.send({
+          topic: "shipper-assignment-topic",
+          messages: [{
+            value: JSON.stringify({
+              shippingId,
+              sellerOrderId,
+              shipperId,
+              orderId,
+              sellerId,
+              products,
+              status: 'assigned',
+              timestamp: new Date().toISOString()
+            })
+          }]
+        });
+      } finally {
+        await producer.disconnect().catch(() => {});
+      }
+
+      res.status(201).json({
+        message: "Shipper assigned successfully",
+        shippingId
+      });
+    } catch (err: any) {
+      console.error("Error assigning shipper:", err);
+      res.status(500).json({ error: "Failed to assign shipper", details: err.message });
+    } finally {
+      await connection.end();
+    }
+  }
+);
+
+// Get all shipping assignments for a seller (for admin to see shipper activity)
+app.get(
+  "/seller-order-shippers/:sellerId",
+  verifyClerkToken,
+  async (req: Request<{ sellerId: string }>, res: Response) => {
+    try {
+      const { sellerId } = req.params;
+      const sellerShards = await ShardHelper.getSellerShards(sellerId);
+
+      // Query each shard for seller_order_shipping
+      const shardQueries = sellerShards.map(async (shardHost) => {
+        const connection = await getShardConnection(shardHost);
+        try {
+          const [rows] = await connection.execute(`
+            SELECT 
+              sos.id, sos.seller_order_id, sos.shipper_id, sos.order_id,
+              sos.status as shipping_status,
+              sos.assigned_at, sos.picked_up_at, sos.shipped_at, sos.delivered_at,
+              sos.notes as shipping_notes,
+              so.status as order_status, so.total_amount,
+              sos.created_at
+            FROM seller_order_shipping sos
+            JOIN seller_orders so ON sos.seller_order_id = so.id
+            WHERE sos.seller_id = ?
+            ORDER BY sos.created_at DESC
+          `, [sellerId]);
+          return { shardHost, rows: rows as any[] };
+        } finally {
+          await connection.end();
+        }
+      });
+
+      const shardResults = await Promise.all(shardQueries);
+
+      // Collect all shipping IDs and shipper IDs
+      const allRecords: any[] = [];
+      const allShippingIds: string[] = [];
+      const allShipperIds = new Set<string>();
+
+      shardResults.forEach(({ rows }) => {
+        rows.forEach((r: any) => {
+          allRecords.push(r);
+          allShippingIds.push(r.id);
+          if (r.shipper_id) allShipperIds.add(r.shipper_id);
+        });
+      });
+
+      // Fetch product names from each shard
+      let itemsMap: Map<string, any[]> = new Map();
+      if (allShippingIds.length > 0) {
+        const shardProductPromises = shardResults.map(async ({ shardHost }) => {
+          const connection = await getShardConnection(shardHost);
+          try {
+            const placeholders = allShippingIds.map(() => '?').join(',');
+            const [itemRows]: any = await connection.execute(`
+              SELECT sosi.shipping_id, sosi.product_id, sosi.quantity, p.product_name
+              FROM seller_order_shipping_items sosi
+              LEFT JOIN products p ON sosi.product_id = p.id
+              WHERE sosi.shipping_id IN (${placeholders})
+            `, allShippingIds);
+            return itemRows as any[];
+          } finally {
+            await connection.end();
+          }
+        });
+        const productResults = await Promise.all(shardProductPromises);
+        productResults.forEach((itemRows) => {
+          itemRows.forEach((item: any) => {
+            if (!itemsMap.has(item.shipping_id)) itemsMap.set(item.shipping_id, []);
+            itemsMap.get(item.shipping_id)!.push({
+              productId: item.product_id,
+              productName: item.product_name || 'Unknown',
+              quantity: item.quantity
+            });
+          });
+        });
+      }
+
+      // Resolve shipper names from global DB
+      const shipperNameMap = new Map<string, { shippername: string; phone: string; email: string }>();
+      if (allShipperIds.size > 0) {
+        const ids = Array.from(allShipperIds);
+        const placeholders = ids.map(() => '?').join(',');
+        const [nameRows]: any = await globalPool.execute(
+          `SELECT id, shippername, phone, email FROM shippers WHERE id IN (${placeholders})`,
+          ids
+        );
+        (nameRows as any[]).forEach((r: any) => {
+          shipperNameMap.set(r.id, { shippername: r.shippername, phone: r.phone, email: r.email });
+        });
+      }
+
+      const result = allRecords.map(record => ({
+        ...record,
+        shippername: shipperNameMap.get(record.shipper_id)?.shippername || 'Unknown',
+        shipper_phone: shipperNameMap.get(record.shipper_id)?.phone || '',
+        shipper_email: shipperNameMap.get(record.shipper_id)?.email || '',
+        products: itemsMap.get(record.id) || []
+      }));
+
+      res.status(200).json(result);
+    } catch (err: any) {
+      console.error("Error fetching seller order shippers:", err);
+      res.status(500).json({ error: "Internal server error", details: err.message });
+    }
+  }
+);
+
+// Get detailed shipment history for a specific shipper (fraud tracing)
+// Shows which dates this shipper shipped which products from which sellers
+app.get(
+  "/shipper-shipment-details/:shipperId",
+  verifyClerkToken,
+  async (req: Request<{ shipperId: string }>, res: Response) => {
+    try {
+      const { shipperId } = req.params;
+
+      // Get shipper info from global DB (shippers table stays global)
+      const [shipperRows] = await globalPool.execute(
+        'SELECT id, shippername, phone, email, address_pincode, address_county, address_state, address_country, created_at FROM shippers WHERE id = ?',
+        [shipperId]
+      );
+
+      if (!Array.isArray(shipperRows) || shipperRows.length === 0) {
+        res.status(404).json({ error: "Shipper not found" });
+        return;
+      }
+
+      const shipperInfo = (shipperRows as any[])[0];
+
+      // Query ALL shards for this shipper's assignments
+      const allShardPromises = SHARD_HOSTS.map(async (shardHost) => {
+        const connection = await getShardConnection(shardHost);
+        try {
+          const [shipRows] = await connection.execute(`
+            SELECT 
+              sos.id, sos.seller_order_id, sos.order_id, sos.seller_id, sos.pincode,
+              sos.status as shipping_status,
+              sos.assigned_at, sos.picked_up_at, sos.shipped_at, sos.delivered_at,
+              sos.notes as shipping_notes,
+              so.status as order_status, so.total_amount
+            FROM seller_order_shipping sos
+            JOIN seller_orders so ON sos.seller_order_id = so.id
+            WHERE sos.shipper_id = ?
+            ORDER BY sos.assigned_at DESC
+          `, [shipperId]);
+
+          // Get product names for these shipments from the same shard
+          const shippingIds = (shipRows as any[]).map(r => r.id).filter(Boolean);
+          let itemsMap = new Map<string, any[]>();
+          
+          if (shippingIds.length > 0) {
+            const placeholders = shippingIds.map(() => '?').join(',');
+            const [itemRows]: any = await connection.execute(`
+              SELECT sosi.shipping_id, sosi.product_id, sosi.quantity, p.product_name, p.price_amount
+              FROM seller_order_shipping_items sosi
+              LEFT JOIN products p ON sosi.product_id = p.id
+              WHERE sosi.shipping_id IN (${placeholders})
+            `, shippingIds);
+            
+            (itemRows as any[]).forEach((item: any) => {
+              if (!itemsMap.has(item.shipping_id)) itemsMap.set(item.shipping_id, []);
+              itemsMap.get(item.shipping_id)!.push({
+                productId: item.product_id,
+                productName: item.product_name || 'Unknown',
+                quantity: item.quantity,
+                price: item.price_amount || 0
+              });
+            });
+          }
+
+          return { shardHost, rows: shipRows as any[], itemsMap };
+        } finally {
+          await connection.end();
+        }
+      });
+
+      const shardResults = await Promise.all(allShardPromises);
+
+      // Collect all unique seller IDs for name resolution
+      const allSellerIds = new Set<string>();
+      const shipments: any[] = [];
+
+      shardResults.forEach(({ rows, itemsMap }) => {
+        rows.forEach((record: any) => {
+          if (record.seller_id) allSellerIds.add(record.seller_id);
+          shipments.push({
+            shippingId: record.id,
+            sellerOrderId: record.seller_order_id,
+            orderId: record.order_id,
+            sellerId: record.seller_id,
+            pincode: record.pincode,
+            status: record.shipping_status,
+            orderStatus: record.order_status,
+            totalAmount: record.total_amount,
+            assignedAt: record.assigned_at,
+            pickedUpAt: record.picked_up_at,
+            shippedAt: record.shipped_at,
+            deliveredAt: record.delivered_at,
+            notes: record.shipping_notes,
+            products: itemsMap?.get(record.id) || []
+          });
+        });
+      });
+
+      // Resolve seller names from global DB
+      const sellerNameMap = new Map<string, string>();
+      if (allSellerIds.size > 0) {
+        const ids = Array.from(allSellerIds);
+        const placeholders = ids.map(() => '?').join(',');
+        const [nameRows]: any = await globalPool.execute(
+          `SELECT id, username, email FROM sellers WHERE id IN (${placeholders})`,
+          ids
+        );
+        (nameRows as any[]).forEach((r: any) => {
+          sellerNameMap.set(r.id, r.username);
+        });
+      }
+
+      // Sort by assignedAt descending and enrich with seller names
+      shipments.sort((a, b) => new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime());
+      shipments.forEach(s => {
+        s.sellerName = sellerNameMap.get(s.sellerId) || 'Unknown';
+      });
+
+      res.status(200).json({
+        shipper: {
+          id: shipperInfo.id,
+          name: shipperInfo.shippername,
+          phone: shipperInfo.phone,
+          email: shipperInfo.email,
+          address: {
+            pincode: shipperInfo.address_pincode,
+            county: shipperInfo.address_county,
+            state: shipperInfo.address_state,
+            country: shipperInfo.address_country
+          }
+        },
+        totalShipments: shipments.length,
+        shipments
+      });
+    } catch (err: any) {
+      console.error("Error fetching shipper shipment details:", err);
+      res.status(500).json({ error: "Internal server error", details: err.message });
+    }
+  }
+);
+
+// Update shipping status (shipped, delivered, etc.)
+app.patch(
+  "/update-shipping-status/:shippingId",
+  verifyClerkToken,
+  async (req: Request<{ shippingId: string }>, res: Response) => {
+    try {
+      const { shippingId } = req.params;
+      const { status, notes, pincode } = req.body as { status: string; notes?: string; pincode?: string };
+
+      const validStatuses = ['assigned', 'picked_up', 'in_transit', 'delivered', 'cancelled'];
+      if (!validStatuses.includes(status)) {
+        res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+        return;
+      }
+
+      let targetShard: string | null = null;
+
+      // If pincode is provided, route directly to that shard
+      if (pincode) {
+        targetShard = ShardHelper.getShardHost(pincode);
+      } else {
+        // Otherwise, iterate shards to find the record
+        for (const shardHost of SHARD_HOSTS) {
+          const conn = await getShardConnection(shardHost);
+          try {
+            const [rows]: any = await conn.execute(
+              'SELECT id FROM seller_order_shipping WHERE id = ? LIMIT 1',
+              [shippingId]
+            );
+            if ((rows as any[]).length > 0) {
+              targetShard = shardHost;
+              break;
+            }
+          } finally {
+            await conn.end();
+          }
+        }
+      }
+
+      if (!targetShard) {
+        res.status(404).json({ error: "Shipping record not found" });
+        return;
+      }
+
+      const connection = await getShardConnection(targetShard);
+      try {
+        const updateFields: string[] = ['status = ?'];
+        const updateValues: any[] = [status];
+
+        if (status === 'picked_up') {
+          updateFields.push('picked_up_at = NOW()');
+        } else if (status === 'delivered') {
+          updateFields.push('delivered_at = NOW()');
+        }
+
+        if (notes) {
+          updateFields.push('notes = ?');
+          updateValues.push(notes);
+        }
+
+        updateValues.push(shippingId);
+
+        await connection.execute(
+          `UPDATE seller_order_shipping SET ${updateFields.join(', ')} WHERE id = ?`,
+          updateValues
+        );
+
+        // Send Kafka notification
+        const producer = kafka.producer();
+        await producer.connect();
+        try {
+          await producer.send({
+            topic: "shipping-event-topic",
+            messages: [{
+              value: JSON.stringify({
+                shippingId,
+                status,
+                timestamp: new Date().toISOString()
+              })
+            }]
+          });
+        } finally {
+          await producer.disconnect().catch(() => {});
+        }
+
+        res.status(200).json({ message: `Shipping status updated to ${status}` });
+      } finally {
+        await connection.end();
+      }
+    } catch (err: any) {
+      console.error("Error updating shipping status:", err);
       res.status(500).json({ error: "Internal server error", details: err.message });
     }
   }
