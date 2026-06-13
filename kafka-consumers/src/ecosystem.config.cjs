@@ -140,5 +140,19 @@ module.exports = {
                 NODE_ENV: 'production',
             },
         },
+        {
+            name: 'create-shipper-consumer',
+            script: 'src/CreateShipperConsumer.ts',
+            interpreter: 'node',
+            interpreter_args: '--import tsx',
+            instances: 1,
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '500M',
+            windowsHide: true,
+            env: {
+                NODE_ENV: 'production',
+            },
+        },
     ],
 };

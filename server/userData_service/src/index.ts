@@ -117,6 +117,65 @@ app.post(
   }
 );
 
+// Fetch shipper data by ID (with shipper- prefix)
+app.get(
+  "/fetch-shipper-data/:_id",
+  verifyUserToken,
+  async (req: Request<{ _id: string }>, res: Response) => {
+    console.log("fetch-shipper :", req.params._id);
+    try {
+      const [rows] = await globalPool.execute(
+        'SELECT * FROM shippers WHERE id = ?',
+        [req.params._id]
+      );
+      const row = (rows as any[])[0];
+      if (!row) {
+        res.json(null);
+        return;
+      }
+      const result = {
+        _id: row.id,
+        shippername: row.shippername,
+        email: row.email,
+        phone: row.phone,
+        address: row.address_pincode ? {
+          pincode: row.address_pincode,
+          county: row.address_county,
+          country: row.address_country,
+          state: row.address_state
+        } : null
+      };
+      console.log(result);
+      res.json(result);
+    } catch (e: Error | any) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+// Create shipper via Kafka (same pattern as create-user)
+app.post(
+  "/create-shipper",
+  verifyUserToken,
+  async (req: Request<{}, {}, { _id: string; username: string; email: string }>, res: Response) => {
+    console.log(req.body);
+    const producer = kafka.producer();
+    try {
+      await producer.connect();
+      await producer.send({
+        topic: 'shipper-create-topic',
+        messages: [{ value: JSON.stringify(req.body) }]
+      });
+      res.status(201).json({ message: 'Shipper creation queued' });
+    } catch (err: Error | any) {
+      console.log("<<error>> :", err.message);
+      res.status(500).json({ error: 'Failed to create shipper' });
+    } finally {
+      await producer.disconnect().catch(() => {});
+    }
+  }
+);
+
 app.get(
   "/fetch-user-data/:_id",
   verifyUserToken,
