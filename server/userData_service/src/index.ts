@@ -153,25 +153,45 @@ app.get(
   }
 );
 
-// Create shipper via Kafka (same pattern as create-user)
+// Create shipper — direct MySQL insert (synchronous) plus Kafka notification
 app.post(
   "/create-shipper",
   verifyUserToken,
   async (req: Request<{}, {}, { _id: string; username: string; email: string }>, res: Response) => {
     console.log(req.body);
-    const producer = kafka.producer();
+    const { _id, username, email } = req.body;
     try {
-      await producer.connect();
-      await producer.send({
-        topic: 'shipper-create-topic',
-        messages: [{ value: JSON.stringify(req.body) }]
-      });
-      res.status(201).json({ message: 'Shipper creation queued' });
+      // Insert directly into global shippers table synchronously – no Kafka dependency
+      await globalPool.execute(
+        `INSERT IGNORE INTO shippers (id, shippername, email, phone)
+         VALUES (?, ?, ?, ?)`,
+        [
+          _id,
+          username || email?.split('@')[0] || 'shipper',
+          email,
+          0  // placeholder phone — shipper can update via profile later
+        ]
+      );
+
+      // Also notify via Kafka so any other consumers (SSE, notifications) can react
+      const producer = kafka.producer();
+      try {
+        await producer.connect();
+        await producer.send({
+          topic: 'shipper-create-topic',
+          messages: [{ value: JSON.stringify(req.body) }]
+        });
+      } catch (kafkaErr) {
+        // Kafka is optional — shipper record is already saved; log and move on
+        console.warn("Kafka notification for shipper creation failed (non-blocking):", (kafkaErr as Error).message);
+      } finally {
+        await producer.disconnect().catch(() => {});
+      }
+
+      res.status(201).json({ message: 'Shipper created', _id });
     } catch (err: Error | any) {
-      console.log("<<error>> :", err.message);
+      console.log("<<error creating shipper>> :", err.message);
       res.status(500).json({ error: 'Failed to create shipper' });
-    } finally {
-      await producer.disconnect().catch(() => {});
     }
   }
 );

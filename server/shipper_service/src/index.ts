@@ -365,6 +365,127 @@ const kafka = new Kafka({
         }
     );
 
+    //fetch delivered orders for shipper
+    app.get(
+        "/fetch-delivered-orders/:shipperId",
+        verifyClerkToken,
+        async (req: Request<{ shipperId: string }>, res: Response) => {
+            try {
+                const { shipperId } = req.params;
+                console.log(`<Fetching delivered orders for shipper: ${shipperId}>`);
+
+                // Fetch orders with status 'shipped' for this shipper
+                const [orderRows] = await globalPool.execute(
+                    `SELECT 
+                        o.id,
+                        o.order_id_display AS orderId,
+                        o.customer_id,
+                        o.shipper_id,
+                        o.quantity,
+                        o.transaction_id AS transactionId,
+                        o.payment_signature AS paymentSignature,
+                        o.amount,
+                        o.status,
+                        o.created_at AS createdAt,
+                        o.updated_at AS updatedAt
+                     FROM orders o
+                     WHERE o.shipper_id = ?
+                       AND o.status IN ('shipped')
+                     ORDER BY o.created_at DESC`,
+                    [shipperId]
+                );
+
+                const orders = orderRows as any[];
+
+                // Fetch customer info for all orders (batch)
+                const customerIds = [...new Set(orders.map(o => o.customer_id).filter(Boolean))];
+                let customerMap: Record<string, any> = {};
+                if (customerIds.length > 0) {
+                    const placeholders = customerIds.map(() => '?').join(',');
+                    const [userRows] = await globalPool.execute(
+                        `SELECT id, username, email, phone, geo_lat, geo_lng,
+                                address_pincode, address_county, address_country, address_state
+                         FROM users WHERE id IN (${placeholders})`,
+                        customerIds
+                    );
+                    for (const user of (userRows as any[])) {
+                        customerMap[user.id] = user;
+                    }
+                }
+
+                const result = orders.map(order => {
+                    const customer = customerMap[order.customer_id] || null;
+                    return {
+                        _id: order.id,
+                        orderId: order.orderId,
+                        customer: customer ? {
+                            _id: customer.id,
+                            username: customer.username,
+                            email: customer.email,
+                            phone: customer.phone,
+                            geoPoint: customer.geo_lat && customer.geo_lng
+                                ? { lat: customer.geo_lat, lng: customer.geo_lng }
+                                : null,
+                            address: customer.address_pincode
+                                ? {
+                                    pincode: customer.address_pincode,
+                                    county: customer.address_county,
+                                    country: customer.address_country,
+                                    state: customer.address_state
+                                  }
+                                : null
+                        } : null,
+                        product: null,
+                        quantity: order.quantity,
+                        transactionId: order.transactionId,
+                        amount: order.amount,
+                        status: order.status,
+                        createdAt: order.createdAt,
+                        expectedDelivery: null
+                    };
+                });
+
+                res.status(200).json(result);
+            } catch (e: Error | any) {
+                console.error('Error fetching delivered orders:', e);
+                res.status(500).json({ error: e.message });
+            }
+        }
+    );
+
+    //fetch dashboard stats for shipper
+    app.get(
+        "/shipper-dashboard-stats/:shipperId",
+        verifyClerkToken,
+        async (req: Request<{ shipperId: string }>, res: Response) => {
+            try {
+                const { shipperId } = req.params;
+                console.log(`<Fetching dashboard stats for shipper: ${shipperId}>`);
+
+                // Count orders by status for this shipper
+                const [rows] = await globalPool.execute(
+                    `SELECT 
+                        SUM(CASE WHEN status = 'orderPlaced' THEN 1 ELSE 0 END) AS pending,
+                        SUM(CASE WHEN status IN ('dispatched', 'shipping') THEN 1 ELSE 0 END) AS inTransit,
+                        SUM(CASE WHEN status = 'shipped' THEN 1 ELSE 0 END) AS delivered
+                     FROM orders
+                     WHERE shipper_id = ?`,
+                    [shipperId]
+                );
+
+                const stats = (rows as any[])[0];
+                res.status(200).json({
+                    pending: Number(stats?.pending || 0),
+                    inTransit: Number(stats?.inTransit || 0),
+                    delivered: Number(stats?.delivered || 0)
+                });
+            } catch (e: Error | any) {
+                console.error('Error fetching dashboard stats:', e);
+                res.status(500).json({ error: e.message });
+            }
+        }
+    );
+
     //#endregion 
 
 
