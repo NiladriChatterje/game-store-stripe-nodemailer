@@ -46,6 +46,29 @@ const globalPool = mysql.createPool({
   queueLimit: 10
 });
 
+// Shard connection helper (mirrors seller_service for seller_orders routing)
+const SHARD_HOSTS = ['mysql1', 'mysql2', 'mysql3', 'mysql4', 'mysql5'];
+
+async function getShardConnection(shardHost: string): Promise<mysql.Connection> {
+  return mysql.createConnection({
+    host: shardHost,
+    port: 3306,
+    user: 'root',
+    database: 'xvstore'
+  });
+}
+
+function getShardHost(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+  const index = Math.abs(hash) % SHARD_HOSTS.length;
+  return SHARD_HOSTS[index];
+}
+
 try {
   await redisClient.connect();
   console.log("<<redis connected successfully>>");
@@ -322,6 +345,170 @@ app.post(
     } catch (error: Error | any) {
       console.error("Error fetching delivery orders:", error);
       res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// ─── SELLER ORDER STATUS UPDATE (accept/reject/process) ───
+// Called by the admin (seller) orders page when accepting or updating order status.
+// When status is 'accepted', publishes to shipper-delivery-event-topic so nearby
+// shippers get notified.
+app.patch(
+  "/seller-order-status/:sellerOrderId",
+  verifyUserToken,
+  async (req: Request<{ sellerOrderId: string }>, res: Response) => {
+    const { sellerOrderId } = req.params;
+    const { status } = req.body as { status: string };
+
+    const validStatuses = ['accepted', 'rejected', 'processing', 'ready_to_ship'];
+    if (!validStatuses.includes(status)) {
+      res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      return;
+    }
+
+    if (status === 'rejected') {
+      res.status(400).json({ error: 'Use /seller-order-reject/:sellerOrderId to reject with a reason' });
+      return;
+    }
+
+    console.log(`[seller-order-status] Updating ${sellerOrderId} to ${status}`);
+
+    // Search across all shards to find the seller_order
+    let targetShard: string | null = null;
+    let orderData: any = null;
+
+    for (const shardHost of SHARD_HOSTS) {
+      const conn = await getShardConnection(shardHost);
+      try {
+        const [rows]: any = await conn.execute(
+          `SELECT id, order_id, seller_id, pincode, total_amount FROM seller_orders WHERE id = ? LIMIT 1`,
+          [sellerOrderId]
+        );
+        if ((rows as any[]).length > 0) {
+          targetShard = shardHost;
+          orderData = (rows as any[])[0];
+          break;
+        }
+      } finally {
+        await conn.end();
+      }
+    }
+
+    if (!targetShard || !orderData) {
+      res.status(404).json({ error: 'Seller order not found' });
+      return;
+    }
+
+    const conn = await getShardConnection(targetShard);
+    try {
+      if (status === 'accepted') {
+        await conn.execute(
+          `UPDATE seller_orders SET status = ?, accepted_at = NOW() WHERE id = ?`,
+          [status, sellerOrderId]
+        );
+      } else {
+        await conn.execute(
+          `UPDATE seller_orders SET status = ? WHERE id = ?`,
+          [status, sellerOrderId]
+        );
+      }
+
+      // If accepted, publish to shipper-delivery-event-topic for nearby shippers
+      if (status === 'accepted') {
+        // Fetch products from seller_order_items
+        const [itemRows]: any = await conn.execute(
+          `SELECT product_id, quantity FROM seller_order_items WHERE seller_order_id = ?`,
+          [sellerOrderId]
+        );
+
+        const products = (itemRows as any[]).map((item: any) => ({
+          productId: item.product_id,
+          quantity: item.quantity
+        }));
+
+        const pincode = orderData.pincode || '';
+
+        const producer = kafka.producer();
+        await producer.connect();
+        try {
+          await producer.send({
+            topic: "shipper-delivery-event-topic",
+            messages: [{
+              value: JSON.stringify({
+                sellerOrderId,
+                orderId: orderData.order_id,
+                sellerId: orderData.seller_id,
+                pincode,
+                amount: Number(orderData.total_amount) || 0,
+                products,
+                timestamp: new Date().toISOString()
+              })
+            }]
+          });
+          console.log(`[seller-order-status] Published shipper delivery event for ${sellerOrderId}`);
+        } finally {
+          await producer.disconnect().catch(() => {});
+        }
+      }
+
+      res.status(200).json({ message: `Order status updated to ${status}` });
+    } catch (err: any) {
+      console.error('[seller-order-status] Error:', err);
+      res.status(500).json({ error: 'Failed to update order status', details: err.message });
+    } finally {
+      await conn.end();
+    }
+  }
+);
+
+// ─── SELLER ORDER REJECT (with reason) ───
+app.patch(
+  "/seller-order-reject/:sellerOrderId",
+  verifyUserToken,
+  async (req: Request<{ sellerOrderId: string }>, res: Response) => {
+    const { sellerOrderId } = req.params;
+    const { rejectionReason } = req.body as { rejectionReason: string };
+
+    if (!rejectionReason || !rejectionReason.trim()) {
+      res.status(400).json({ error: 'Rejection reason is required' });
+      return;
+    }
+
+    // Search across all shards to find the seller_order
+    let targetShard: string | null = null;
+    for (const shardHost of SHARD_HOSTS) {
+      const conn = await getShardConnection(shardHost);
+      try {
+        const [rows]: any = await conn.execute(
+          'SELECT id FROM seller_orders WHERE id = ? LIMIT 1',
+          [sellerOrderId]
+        );
+        if ((rows as any[]).length > 0) {
+          targetShard = shardHost;
+          break;
+        }
+      } finally {
+        await conn.end();
+      }
+    }
+
+    if (!targetShard) {
+      res.status(404).json({ error: 'Seller order not found' });
+      return;
+    }
+
+    const conn = await getShardConnection(targetShard);
+    try {
+      await conn.execute(
+        `UPDATE seller_orders SET status = 'rejected', rejection_reason = ? WHERE id = ?`,
+        [rejectionReason, sellerOrderId]
+      );
+      res.status(200).json({ message: 'Order rejected' });
+    } catch (err: any) {
+      console.error('[seller-order-reject] Error:', err);
+      res.status(500).json({ error: 'Failed to reject order', details: err.message });
+    } finally {
+      await conn.end();
     }
   }
 );

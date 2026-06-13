@@ -188,5 +188,22 @@ export default {
                 PM2_SILENT: 'true'
             },
         },
+        {
+            name: 'shipper-notification-consumer',
+            script: 'src/ShipperNotificationConsumer.ts',
+            interpreter: 'tsx',
+            instances: 1,
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '300M',
+            disable_logs: false,
+            error_file: 'logs/shipper-notification-consumer-error.log',
+            out_file: 'logs/shipper-notification-consumer-out.log',
+            env: {
+                NODE_ENV: 'production',
+                PM2_DISABLE_LOGS: 'true',
+                PM2_SILENT: 'true'
+            },
+        },
     ],
 };

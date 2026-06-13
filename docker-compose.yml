@@ -202,6 +202,7 @@ services:
       - ./store/sellers.sql:/docker-entrypoint-initdb.d/02_sellers.sql
       - ./store/shippers.sql:/docker-entrypoint-initdb.d/03_shippers.sql
       - ./store/cart.sql:/docker-entrypoint-initdb.d/04_cart.sql
+      - ./store/shipper_notifications.sql:/docker-entrypoint-initdb.d/05_shipper_notifications.sql
     mem_limit: 512m
     cpus: 0.5
 

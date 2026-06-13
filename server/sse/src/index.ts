@@ -15,12 +15,14 @@ app.use(express.json());
 // Event Emitter to bridge Kafka and SSE
 const notificationEmitter1 = new EventEmitter();
 const notificationEmitter2 = new EventEmitter();
-const notificationEmitter3 = new EventEmitter(); // shipper events
+const notificationEmitter3 = new EventEmitter(); // shipper events (assignments, status updates)
+const notificationEmitter4 = new EventEmitter(); // shipper notification events (new deliveries)
 
 // Increase max listeners to avoid memory leak warnings with many SSE connections
 notificationEmitter1.setMaxListeners(100);
 notificationEmitter2.setMaxListeners(100);
 notificationEmitter3.setMaxListeners(100);
+notificationEmitter4.setMaxListeners(100);
 
 // Kafka Setup
 const KAFKA_BROKERS = ["kafka1:9092", "kafka2:9093", "kafka3:9094"];
@@ -75,6 +77,40 @@ app.get('/orders', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Respon
     });
 });
 
+// SSE endpoint for shipper real-time notifications (new deliveries via bell icon)
+app.get('/shipper-notifications', (req: Request<{}, {}, {}, { shipperId?: string }>, res: Response) => {
+    const shipperId = req.query.shipperId as string;
+
+    if (!shipperId) {
+        res.status(400).json({ error: 'shipperId query parameter is required' });
+        return;
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const onShipperNotification = (data: any) => {
+        // Forward notifications only for this shipper
+        const notification = data.payload?.notification || data.payload;
+        const shipperIds = data.payload?.shipperIds || [];
+
+        if (shipperIds.includes(shipperId) || notification?.shipperId === shipperId) {
+            res.write(`data: ${JSON.stringify({
+                type: 'new_notification',
+                data: notification
+            })}\n\n`);
+        }
+    };
+
+    notificationEmitter4.on('notification', onShipperNotification);
+    res.write('data: {"message": "connected"}\n\n');
+
+    req.on('close', () => {
+        notificationEmitter4.removeListener('notification', onShipperNotification);
+    });
+});
+
 // SSE endpoint for shipper real-time events (assignments, status updates)
 app.get('/shipper-events', (req: Request<{}, {}, {}, { sellerId?: string }>, res: Response) => {
     const sellerId = req.query.sellerId as string;
@@ -101,7 +137,7 @@ const initKafka = async () => {
         await consumer.connect();
 
         // Subscribe to multiple topics
-        await consumer.subscribe({ topics: ['subscription-notifications', 'order-notifications', 'seller-order-notification-topic', 'shipper-assignment-topic', 'shipping-event-topic'], fromBeginning: false });
+        await consumer.subscribe({ topics: ['subscription-notifications', 'order-notifications', 'seller-order-notification-topic', 'shipper-assignment-topic', 'shipping-event-topic', 'shipper-notification-topic'], fromBeginning: false });
 
         await consumer.run({
             eachMessage: async ({ topic, message }) => {
@@ -118,6 +154,8 @@ const initKafka = async () => {
                             notificationEmitter2.emit('notification', eventData);
                         } else if (topic === 'shipper-assignment-topic' || topic === 'shipping-event-topic') {
                             notificationEmitter3.emit('notification', eventData);
+                        } else if (topic === 'shipper-notification-topic') {
+                            notificationEmitter4.emit('notification', eventData);
                         }
                     } catch (e) {
                         console.error('[KAFKA] Error parsing Kafka message:', e);

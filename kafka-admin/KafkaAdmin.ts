@@ -183,6 +183,48 @@ async function admin() {
       waitForLeaders: true,
       timeout: 60000,
     });
+    // shipper-delivery-event-topic: Seller accepts order → notify nearby shippers
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "shipper-delivery-event-topic",
+            numPartitions: 6,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      });
+
+    // shipper-notification-topic: ShipperNotificationConsumer → SSE Service
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "shipper-notification-topic",
+            numPartitions: 6,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      });
+
+    // shipper-claim-response-topic: Claim result → SSE (real-time claim status)
+    await admin
+      .createTopics({
+        topics: [
+          {
+            topic: "shipper-claim-response-topic",
+            numPartitions: 6,
+            replicationFactor: 3,
+          },
+        ],
+        waitForLeaders: true,
+        timeout: 60000,
+      });
+
     // await admin
     //   .deleteTopics({ topics: ["product-topic", "product-db-save-topic"] })
 

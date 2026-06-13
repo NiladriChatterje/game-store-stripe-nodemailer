@@ -8,6 +8,20 @@ import { Kafka, logLevel, Producer, RecordMetadata } from "kafkajs";
 import { verifyToken } from "@clerk/backend";
 import { JwtPayload } from "@clerk/types";
 
+// ============================================================================
+// SHARD CONFIGURATION (mirrors seller_service for seller_order_shipping writes)
+// ============================================================================
+const SHARD_HOSTS = ['mysql1', 'mysql2', 'mysql3', 'mysql4', 'mysql5'];
+
+async function getShardConnection(shardHost: string): Promise<mysql.Connection> {
+  return mysql.createConnection({
+    host: shardHost,
+    port: 3306,
+    user: 'root',
+    database: 'xvstore'
+  });
+}
+
 
 dotenv.config();
 
@@ -452,6 +466,324 @@ const kafka = new Kafka({
             }
         }
     );
+
+    //#region SHIPPER NOTIFICATION ENDPOINTS
+
+    // GET /shipper/notifications/:shipperId — list notifications
+    app.get(
+        "/shipper/notifications/:shipperId",
+        verifyClerkToken,
+        async (req: Request<{ shipperId: string }>, res: Response) => {
+            try {
+                const { shipperId } = req.params;
+                const statusFilter = req.query.status as string | undefined;
+                console.log(`<Fetching notifications for shipper: ${shipperId}>`);
+
+                let notifications: any[] = [];
+
+                // Try Redis first (freshest data)
+                if (redisClient.isOpen) {
+                    const redisKey = `shipper:notifications:${shipperId}`;
+                    const raw = await redisClient.lRange(redisKey, 0, -1);
+                    if (raw.length > 0) {
+                        notifications = raw.map((item: string) => JSON.parse(item));
+                    }
+                }
+
+                // Fallback: fetch from MySQL if Redis is empty or unavailable
+                if (notifications.length === 0) {
+                    let query = `SELECT id, shipper_id, type, seller_order_id, order_id, seller_id,
+                                        pincode, amount, payload, read_status, claim_status, claimed_at, created_at
+                                 FROM shipper_notifications
+                                 WHERE shipper_id = ?`;
+                    const params: any[] = [shipperId];
+
+                    if (statusFilter) {
+                        query += ` AND read_status = ?`;
+                        params.push(statusFilter);
+                    }
+
+                    query += ` ORDER BY created_at DESC LIMIT 50`;
+
+                    const [rows] = await globalPool.execute(query, params);
+                    notifications = (rows as any[]).map((row: any) => ({
+                        id: row.id,
+                        type: row.type,
+                        sellerOrderId: row.seller_order_id,
+                        orderId: row.order_id,
+                        sellerId: row.seller_id,
+                        pincode: row.pincode,
+                        amount: Number(row.amount),
+                        ...(row.payload ? JSON.parse(row.payload) : {}),
+                        readStatus: row.read_status,
+                        claimStatus: row.claim_status,
+                        claimedAt: row.claimed_at,
+                        createdAt: row.created_at
+                    }));
+                } else if (statusFilter) {
+                    notifications = notifications.filter((n: any) => n.readStatus === statusFilter || n.read_status === statusFilter);
+                }
+
+                res.status(200).json(notifications);
+            } catch (e: Error | any) {
+                console.error('Error fetching notifications:', e);
+                res.status(500).json({ error: e.message });
+            }
+        }
+    );
+
+    // POST /shipper/notifications/:notificationId/read — mark notification as read
+    app.post(
+        "/shipper/notifications/:notificationId/read",
+        verifyClerkToken,
+        async (req: Request<{ notificationId: string }>, res: Response) => {
+            try {
+                const { notificationId } = req.params;
+                const { shipperId } = req.body as { shipperId: string };
+
+                // Update MySQL
+                await globalPool.execute(
+                    `UPDATE shipper_notifications SET read_status = 'read' WHERE id = ? AND shipper_id = ?`,
+                    [notificationId, shipperId]
+                );
+
+                // Update Redis: find and update the notification in the list
+                if (redisClient.isOpen && shipperId) {
+                    const redisKey = `shipper:notifications:${shipperId}`;
+                    const raw = await redisClient.lRange(redisKey, 0, -1);
+                    for (const item of raw) {
+                        try {
+                            const parsed = JSON.parse(item);
+                            if (parsed.id === notificationId) {
+                                parsed.readStatus = 'read';
+                                await redisClient.lRem(redisKey, 1, item);
+                                await redisClient.lPush(redisKey, JSON.stringify(parsed));
+                                break;
+                            }
+                        } catch {}
+                    }
+                }
+
+                res.status(200).json({ message: 'Notification marked as read' });
+            } catch (e: Error | any) {
+                console.error('Error marking notification as read:', e);
+                res.status(500).json({ error: e.message });
+            }
+        }
+    );
+
+    // GET /shipper/unread-count/:shipperId — unread count for badge
+    app.get(
+        "/shipper/unread-count/:shipperId",
+        verifyClerkToken,
+        async (req: Request<{ shipperId: string }>, res: Response) => {
+            try {
+                const { shipperId } = req.params;
+
+                // Try Redis first
+                if (redisClient.isOpen) {
+                    const redisKey = `shipper:notifications:${shipperId}`;
+                    const raw = await redisClient.lRange(redisKey, 0, -1);
+                    if (raw.length > 0) {
+                        const parsed = raw.map((item: string) => JSON.parse(item));
+                        const unread = parsed.filter((n: any) => n.readStatus === 'unread' || n.read_status === 'unread');
+                        res.status(200).json({ count: unread.length });
+                        return;
+                    }
+                }
+
+                // Fallback to MySQL
+                const [rows] = await globalPool.execute(
+                    `SELECT COUNT(*) as count FROM shipper_notifications
+                     WHERE shipper_id = ? AND read_status = 'unread'`,
+                    [shipperId]
+                );
+                const count = Number((rows as any[])[0]?.count || 0);
+                res.status(200).json({ count });
+            } catch (e: Error | any) {
+                console.error('Error fetching unread count:', e);
+                res.status(500).json({ error: e.message });
+            }
+        }
+    );
+
+    // POST /shipper/accept-delivery — claim a delivery with Redis SETNX lock
+    app.post(
+        "/shipper/accept-delivery",
+        verifyClerkToken,
+        async (req: Request, res: Response) => {
+            const { shipperId, sellerOrderId, sellerId, orderId, pincode, products } = req.body as {
+                shipperId: string;
+                sellerOrderId: string;
+                sellerId: string;
+                orderId: string;
+                pincode: string;
+                products: Array<{ productId: string; quantity: number; productName?: string }>;
+            };
+
+            if (!shipperId || !sellerOrderId || !sellerId || !orderId || !pincode || !products?.length) {
+                res.status(400).json({ error: "Missing required fields" });
+                return;
+            }
+
+            try {
+                // 1. Redis SETNX distributed lock (atomic claim)
+                const lockKey = `delivery:claim:${sellerOrderId}`;
+                const lockValue = JSON.stringify({ shipperId, claimedAt: new Date().toISOString() });
+
+                let lockAcquired = false;
+
+                if (redisClient.isOpen) {
+                    const result = await redisClient.setNX(lockKey, lockValue);
+                    if (result === true) {
+                        await redisClient.expire(lockKey, 3600); // 1 hour TTL
+                        lockAcquired = true;
+                    }
+                } else {
+                    // Fallback: MySQL advisory lock via INSERT ... ON DUPLICATE KEY
+                    try {
+                        await globalPool.execute(
+                            `INSERT INTO shipper_notifications (id, shipper_id, type, seller_order_id, order_id, seller_id, pincode, amount, payload, claim_status, claimed_at)
+                             VALUES (?, ?, 'new_delivery', ?, ?, ?, ?, 0, '{}', 'accepted', NOW())`,
+                            [`claim:${sellerOrderId}`, shipperId, sellerOrderId, orderId, sellerId, pincode]
+                        );
+                        lockAcquired = true;
+                    } catch (insertErr: any) {
+                        if (insertErr.code === 'ER_DUP_ENTRY') {
+                            lockAcquired = false;
+                        } else {
+                            throw insertErr;
+                        }
+                    }
+                }
+
+                if (!lockAcquired) {
+                    // Someone else claimed it
+                    console.log(`[accept-delivery] Lock failed for ${sellerOrderId} — already claimed`);
+
+                    // Try to get who claimed it
+                    let claimedBy = null;
+                    if (redisClient.isOpen) {
+                        const existingLock = await redisClient.get(lockKey);
+                        if (existingLock) {
+                            try { claimedBy = JSON.parse(existingLock).shipperId; } catch {}
+                        }
+                    }
+
+                    res.status(409).json({
+                        error: "Already assigned",
+                        message: "This delivery has already been claimed by another shipper",
+                        claimedBy
+                    });
+                    return;
+                }
+
+                console.log(`[accept-delivery] Lock acquired for ${sellerOrderId} by ${shipperId}`);
+
+                // 2. Call seller_service /assign-shipper via internal HTTP
+                // Use Docker service name since we're inside the container network
+                const assignResponse = await fetch(`http://seller_service:5003/assign-shipper`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': req.headers.authorization || ''
+                    },
+                    body: JSON.stringify({
+                        sellerOrderId,
+                        shipperId,
+                        orderId,
+                        sellerId,
+                        pincode,
+                        products: products.map(p => ({ productId: p.productId, quantity: p.quantity })),
+                        notes: `Auto-assigned via delivery claim by shipper ${shipperId}`
+                    })
+                });
+
+                if (!assignResponse.ok) {
+                    const assignError = await assignResponse.text();
+                    console.error(`[accept-delivery] /assign-shipper failed: ${assignError}`);
+
+                    // Release the lock since the assignment failed
+                    if (redisClient.isOpen) {
+                        await redisClient.del(lockKey);
+                    }
+
+                    res.status(502).json({
+                        error: "Failed to assign shipper",
+                        details: assignError
+                    });
+                    return;
+                }
+
+                const assignResult = await assignResponse.json();
+
+                // 3. Update notification statuses in MySQL for THIS shipper
+                await globalPool.execute(
+                    `UPDATE shipper_notifications
+                     SET claim_status = 'accepted', read_status = 'claimed', claimed_at = NOW()
+                     WHERE seller_order_id = ? AND shipper_id = ?`,
+                    [sellerOrderId, shipperId]
+                );
+
+                // Mark all OTHER shippers' notifications as rejected
+                await globalPool.execute(
+                    `UPDATE shipper_notifications
+                     SET claim_status = 'rejected_by_other', read_status = 'expired'
+                     WHERE seller_order_id = ? AND shipper_id != ? AND claim_status = 'pending'`,
+                    [sellerOrderId, shipperId]
+                );
+
+                // 4. Update Redis for this shipper
+                if (redisClient.isOpen) {
+                    const redisKey = `shipper:notifications:${shipperId}`;
+                    const raw = await redisClient.lRange(redisKey, 0, -1);
+                    for (const item of raw) {
+                        try {
+                            const parsed = JSON.parse(item);
+                            if (parsed.sellerOrderId === sellerOrderId) {
+                                parsed.claimed = true;
+                                parsed.claimedBy = shipperId;
+                                parsed.readStatus = 'claimed';
+                                await redisClient.lRem(redisKey, 1, item);
+                                await redisClient.lPush(redisKey, JSON.stringify(parsed));
+                                break;
+                            }
+                        } catch {}
+                    }
+                }
+
+                // 5. Publish claim result to SSE topic for real-time UI updates
+                const producer = kafka.producer();
+                await producer.connect();
+                try {
+                    await producer.send({
+                        topic: "shipper-claim-response-topic",
+                        messages: [{
+                            value: JSON.stringify({
+                                sellerOrderId,
+                                shipperId,
+                                claimed: true,
+                                shippingId: assignResult.shippingId,
+                                timestamp: new Date().toISOString()
+                            })
+                        }]
+                    });
+                } finally {
+                    await producer.disconnect().catch(() => {});
+                }
+
+                res.status(200).json({
+                    message: "Delivery claimed and assigned successfully",
+                    shippingId: assignResult.shippingId
+                });
+            } catch (e: Error | any) {
+                console.error('[accept-delivery] Error:', e);
+                res.status(500).json({ error: "Failed to claim delivery", details: e.message });
+            }
+        }
+    );
+
+    //#endregion
 
     //fetch dashboard stats for shipper
     app.get(
