@@ -10,3 +10,6 @@ dist
 dist/*
 
 .claude
+claude/
+
+vscode/
