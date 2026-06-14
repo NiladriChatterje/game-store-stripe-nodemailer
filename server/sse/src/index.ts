@@ -1,8 +1,10 @@
 import express, { Request, Response } from 'express';
+import http from 'http';
 import cors from 'cors';
 import { Kafka } from 'kafkajs';
 import dotenv from 'dotenv';
 import { EventEmitter } from 'events';
+import { initWebSocketServer, shutdownWebSocket } from './websocket';
 
 dotenv.config();
 
@@ -11,6 +13,9 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
+
+// Create HTTP server explicitly so we can attach WebSocket to it
+const server = http.createServer(app);
 
 // Event Emitter to bridge Kafka and SSE
 const notificationEmitter1 = new EventEmitter();
@@ -169,30 +174,32 @@ const initKafka = async () => {
     }
 };
 
-// Graceful shutdown: disconnect Kafka consumer
-process.on('SIGTERM', async () => {
-    console.log('[SSE] SIGTERM received. Shutting down gracefully...');
+// Graceful shutdown: disconnect Kafka consumer + WebSocket + Redis
+async function gracefulShutdown(signal: string) {
+    console.log(`[SSE] ${signal} received. Shutting down gracefully...`);
     try {
         await consumer.disconnect();
         console.log('[SSE] Kafka consumer disconnected.');
     } catch (e) {
         console.error('[SSE] Error disconnecting Kafka consumer:', e);
     }
-    process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-    console.log('[SSE] SIGINT received. Shutting down gracefully...');
     try {
-        await consumer.disconnect();
-        console.log('[SSE] Kafka consumer disconnected.');
+        await shutdownWebSocket();
+        console.log('[SSE] WebSocket / Redis disconnected.');
     } catch (e) {
-        console.error('[SSE] Error disconnecting Kafka consumer:', e);
+        console.error('[SSE] Error shutting down WebSocket:', e);
     }
     process.exit(0);
-});
+}
 
-app.listen(PORT, () => {
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+server.listen(PORT, () => {
     console.log(`SSE Server running on http://localhost:${PORT}`);
+    // Initialise WebSocket server after HTTP server is listening
+    initWebSocketServer(server).catch(err =>
+        console.error('[SSE] Failed to start WebSocket server:', err)
+    );
     initKafka();
 });
